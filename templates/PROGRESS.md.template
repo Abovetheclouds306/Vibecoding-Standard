@@ -1,0 +1,14 @@
+# 执行日志
+
+## <时间与时区> — <任务 ID>
+Goal: <目标>
+Baseline: <commit / 分支 / 工作区版本>
+Changed: <实际改动与原因>
+Validation: <工作目录、命令、退出码、结果>
+Acceptance: <验收 ID → 结果 → 证据>
+Evidence: <路径>
+Review: <diff 审查结论>
+Remaining: <剩余事项>
+Next: <下一步与任务表链接>
+
+追加事实；不要用示例数字代替实际测试结果。

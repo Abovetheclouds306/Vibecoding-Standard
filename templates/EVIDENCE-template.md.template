@@ -1,0 +1,17 @@
+# <任务 ID> 验证记录
+
+Time: <日期、时间、时区>
+Baseline: <commit；未提交改动附 diff 标识或快照>
+Environment: <系统、运行时、目标环境>
+
+| 验收 ID | 命令 / 步骤 | 退出码 | 结论 | 证据路径 | 限制 |
+| --- | --- | --- | --- | --- | --- |
+| <AC-001> | <命令> | <实际值或 N/A> | NOT_RUN | <路径> | <缺失条件> |
+
+结论：PASS / FAIL / BLOCKED / NOT_RUN；N/A 必须说明理由。
+审查：<审查者、版本、结论>。
+
+Artifacts: <日志/报告/截图；无适用材料写 N/A 与原因>
+Recheck Conditions: <哪些后续改动会使本次证据不足>
+Cleanup / Recovery: <真实写入时填实际结果；否则 N/A>
+Release Status: <未涉及 / 已提交 / 已合并 / 已发布，须有依据>

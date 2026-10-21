@@ -1,0 +1,21 @@
+# ADR-001 — <决策标题>
+
+Status: Proposed
+Date: <日期>
+Owner: <负责人>
+Supersedes / Superseded by: <ADR ID 或无>
+
+## 背景
+<需要决定的问题与约束>
+## 决定
+<选择>
+## 替代方案
+<候选及取舍>
+## 理由
+<依据>
+## 后果
+<收益、代价、迁移影响>
+## 重新评估条件
+<触发条件>
+
+状态可用 Proposed / Accepted / Rejected / Superseded。保留已接受决策的历史。
