@@ -1,10 +1,10 @@
-# Vibecoding 规范 v1.2.5
+# Vibecoding 规范 v1.2.6
 
-版本：1.2.5｜更新：2026-10-21｜适用：Codex / Claude Code / 其他遵守仓库入口规则的 Agent
+版本：1.2.6｜更新：2026-10-21｜适用：Codex / Claude Code / 其他遵守仓库入口规则的 Agent
 
 > 一套规范、一个任务真值源、多个 Agent 共用。不安装程序，不直接修改任何业务仓库。
 
-**第一次接入自己的 Agent？请先看 [Agent 接入指南](docs/Agent接入指南.md)：一次配置项目入口，日常无需重复让 Agent 访问 GitHub。**
+**最推荐的接入方式：在业务项目里把本仓库地址或正式 ZIP 直接交给 Agent，让它按 [《Agent 接入指南》](docs/Agent接入指南.md) 自主完成首次配置与验证。** 之后正常派任务即可，无需每次重复提醒。
 
 ---
 
@@ -13,7 +13,7 @@
 | 文件 | 用途 | 必读 |
 | --- | --- | --- |
 | **`AI_PROJECT_STANDARD.md`** | **母规范 —— 唯一通用真值源**：真值源映射、任务与状态、DoD、证据、验证选择、工作区卫生 | ✅ 所有人 |
-| **[`docs/Agent接入指南.md`](docs/Agent接入指南.md)** | **新使用者从零接入**：克隆 / 固定版本 → 项目入口 → Codex / Claude Code / 其他 Agent → 验证 → 日常执行 | ✅ 首次接入 |
+| **[`docs/Agent接入指南.md`](docs/Agent接入指南.md)** | **首选：直接交给 Agent 自动接入**；附可复制提示词、首次验收及手动接入备用流程 | ✅ 首次接入 |
 | **`agents/Claude-Code.md`** | Claude Code 的指令文件加载规则（含证据分级）、提示词与验证方法 | Claude Code 用户 |
 | **`agents/Codex.md`** | Codex 接入方式与提示词 | Codex 用户 |
 | `完整任务示例.md` | 一个含 `BLOCKED` 的端到端示例（教学用，非当前项目状态） | 参考 |
@@ -75,12 +75,12 @@
 
 本包是 **Markdown 工程规则与模板**，不是可执行插件；解压后不会自动配置 MCP、Skills 或修改任何代码仓库。
 
-1. 下载 `Vibecoding规范-v1.2.5-完整整合版.zip`。
+1. 下载 `Vibecoding规范-v1.2.6-完整整合版.zip`。
 2. 先备份本地已有同名目录（如有），**不要直接覆盖未提交的个人修改**。
 3. 解压到目标位置。ZIP 内含单一顶层目录 `Vibecoding规范/`：
 
 ```powershell
-Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.5-完整整合版.zip" -DestinationPath 'F:\DOSS_Project'
+Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.6-完整整合版.zip" -DestinationPath 'F:\DOSS_Project'
 ```
 
 > **不要**解压到已经命名为 `Vibecoding规范` 的文件夹中，否则会形成双层同名目录。
@@ -120,7 +120,7 @@ Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.5-完整整�
 - `MANIFEST.sha256` 列出发布包内全部文件的 SHA-256（不含清单自身，也不含 `_archive/`、`_review_*/`、`_dist/`）。
 - 校验：`python tools/verify_manifest.py` 和 `python tools/check_links.py`；重新打包：`python tools/release_zip.py build <输出 zip>`（构建前会强制验证清单与文件哈希）。
 - Windows 亦可用 `Get-FileHash -Algorithm SHA256` 校验关键文件。
-- 版本号保持在文档与 ZIP 文件名中；**不把目录重命名为 `Vibecoding规范1.2.5`**。
+- 版本号保持在文档与 ZIP 文件名中；**不把目录重命名为 `Vibecoding规范1.2.6`**。
 - 新项目可一次性采用；老项目应先试点一个任务，避免批量重构。
 - `_archive/` 是历史备份，**不要交给 Agent 当成现行规则**。最新规范始终从 `README.md` / `AI_PROJECT_STANDARD.md` 进入。
 
