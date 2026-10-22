@@ -1,5 +1,6 @@
 # <任务 ID> 验证记录
 
+Task: <TASK-xxx>
 Time: <日期、时间、时区>
 Baseline: <commit；未提交改动附 diff 标识或快照>
 Environment: <系统、运行时、目标环境>
@@ -9,6 +10,7 @@ Environment: <系统、运行时、目标环境>
 | <AC-001> | <命令> | <实际值或 N/A> | NOT_RUN | <路径> | <缺失条件> |
 
 结论：PASS / FAIL / BLOCKED / NOT_RUN；N/A 必须说明理由。
+反向遗漏审查：<适用时记录原始需求 / 风险范围、确认的遗漏及处置；无遗漏也要写审查范围与限制>
 审查：<审查者、版本、结论>。
 
 Artifacts: <日志/报告/截图；无适用材料写 N/A 与原因>

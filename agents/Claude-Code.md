@@ -1,4 +1,4 @@
-# Claude Code 接入 — Vibecoding v1.2.6
+# Claude Code 接入 — Vibecoding v1.2.7 候选
 
 适用：Claude Code。Codex 见 [`Codex.md`](Codex.md)。
 
@@ -90,7 +90,7 @@ Claude Code 通过「**Project instructions**」设置决定读取哪些指令�
 
 在最小必要范围内实现目标；不顺带重构邻近代码，不无依据添加抽象，不假设结果。
 
-运行适用验证，记录命令、版本、证据与 PASS / FAIL / BLOCKED / NOT_RUN。未执行的验证不得写 PASS，必要验收未通过不得标 DONE。
+运行适用验证，记录命令、版本、证据与 PASS / FAIL / BLOCKED / NOT_RUN。交付前按母规范 §8.1 从原始需求和风险反向检查遗漏；未执行的验证不得写 PASS，必要验收未通过不得标 DONE。
 
 最后同步受影响的权威文档、任务状态与交接记录，明确剩余风险与尚未执行的检查。
 ```

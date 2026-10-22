@@ -2,7 +2,7 @@
 
 ## 项目与规则
 项目：<名称>。目标入口：<README 路径>。
-通用规范：<本地或仓库内 AI_PROJECT_STANDARD.md 的真实路径>（Vibecoding 1.2.6）。
+通用规范：<本地或仓库内 AI_PROJECT_STANDARD.md 的真实路径>（Vibecoding 1.2.7 候选）。
 该入口供 Codex 与 Claude Code 共用。Claude Code 的读取条件：默认仅当工作目录**及其上方各层**都没有 `CLAUDE.md` 类文件时才读取本文件；需要共存时，把「Project instructions」设为 `claude-md-and-agents-md`，或用简短 `CLAUDE.md` 以 `@AGENTS.md` 显式导入（仅自然语言提示不保证加载）。详见**通用规范实际所在目录**下的 `agents/Claude-Code.md`；此文件是复制到业务仓库的模板，不能假定业务仓库根目录也有 `agents/`。
 遵循用户当前明确指令；新增约定落实后同步权威文档。先检查工作区，不覆盖他人修改。
 

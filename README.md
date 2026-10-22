@@ -1,6 +1,6 @@
-# Vibecoding 规范 v1.2.6
+# Vibecoding 规范 v1.2.7 候选
 
-版本：1.2.6｜更新：2026-10-21｜适用：Codex / Claude Code / 其他遵守仓库入口规则的 Agent
+版本：1.2.7 候选｜更新：2026-10-23｜适用：Codex / Claude Code / 其他遵守仓库入口规则的 Agent
 
 > 一套规范、一个任务真值源、多个 Agent 共用。不安装程序，不直接修改任何业务仓库。
 
@@ -18,7 +18,7 @@
 | **`agents/Codex.md`** | Codex 接入方式与提示词 | Codex 用户 |
 | `完整任务示例.md` | 一个含 `BLOCKED` 的端到端示例（教学用，非当前项目状态） | 参考 |
 | `templates/` | 工程模板，分「基础 / 按需 / 专项」三级 | 按需复制 |
-| `tools/` | `verify_manifest.py` / `update_manifest.py` / `check_links.py` / `release_zip.py` | 维护者 |
+| `tools/` | `verify_manifest.py` / `update_manifest.py` / `check_links.py` / `release_zip.py` / `check_evidence.py` | 维护者 |
 | `CHANGELOG.md` | 版本与变更原因 | 参考 |
 | `MANIFEST.sha256` | 发布包文件 SHA-256 清单（不含自身） | 校验用 |
 
@@ -58,7 +58,7 @@
 
 ### 结束任务
 
-检查 diff、实际验证与必要验收 → 同步受影响文档 → 记录证据与交接 → **检查本次产生的临时文件与探针能力沉淀**（复用集成 / 清理 / 正式化 / 归档 / 记录，见母规范 §21）→ 仅在 DoD 全部满足后标 `DONE`。
+检查 diff、实际验证与必要验收 → 适用时从原始需求和风险执行一次反向遗漏审查 → 同步受影响文档 → 记录证据与交接 → **检查本次产生的临时文件与探针能力沉淀**（复用集成 / 清理 / 正式化 / 归档 / 记录，见母规范 §21）→ 仅在 DoD 全部满足后标 `DONE`。
 交付状态需区分：代码完成 / 已提交 / 已合并 / 已发布。
 
 ### 最小文档规则
@@ -75,12 +75,12 @@
 
 本包是 **Markdown 工程规则与模板**，不是可执行插件；解压后不会自动配置 MCP、Skills 或修改任何代码仓库。
 
-1. 下载 `Vibecoding规范-v1.2.6-完整整合版.zip`。
+1. 下载 `Vibecoding规范-v1.2.7-候选-完整整合版.zip`。
 2. 先备份本地已有同名目录（如有），**不要直接覆盖未提交的个人修改**。
 3. 解压到目标位置。ZIP 内含单一顶层目录 `Vibecoding规范/`：
 
 ```powershell
-Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.6-完整整合版.zip" -DestinationPath 'F:\DOSS_Project'
+Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.7-候选-完整整合版.zip" -DestinationPath 'F:\DOSS_Project'
 ```
 
 > **不要**解压到已经命名为 `Vibecoding规范` 的文件夹中，否则会形成双层同名目录。
@@ -118,9 +118,9 @@ Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.6-完整整�
 ## 五、校验与升级
 
 - `MANIFEST.sha256` 列出发布包内全部文件的 SHA-256（不含清单自身，也不含 `_archive/`、`_review_*/`、`_dist/`）。
-- 校验：`python tools/verify_manifest.py` 和 `python tools/check_links.py`；重新打包：`python tools/release_zip.py build <输出 zip>`（构建前会强制验证清单与文件哈希）。
+- 校验：`python tools/verify_manifest.py` 和 `python tools/check_links.py`；证据模板可用只读 `python tools/check_evidence.py <evidence.md> --task-id <TASK-xxx>` 检查；重新打包：`python tools/release_zip.py build <输出 zip>`（构建前会强制验证清单与文件哈希）。
 - Windows 亦可用 `Get-FileHash -Algorithm SHA256` 校验关键文件。
-- 版本号保持在文档与 ZIP 文件名中；**不把目录重命名为 `Vibecoding规范1.2.6`**。
+- 版本号保持在文档与 ZIP 文件名中；**不把目录重命名为 `Vibecoding规范1.2.7`**。
 - 新项目可一次性采用；老项目应先试点一个任务，避免批量重构。
 - `_archive/` 是历史备份，**不要交给 Agent 当成现行规则**。最新规范始终从 `README.md` / `AI_PROJECT_STANDARD.md` 进入。
 

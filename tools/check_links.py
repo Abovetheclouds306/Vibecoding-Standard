@@ -21,7 +21,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 本地追溯材料目录：不参与引用检查
-EXCLUDE_DIRS = {"_dist", "_archive", "__pycache__"}
+EXCLUDE_DIRS = {".git", "_dist", "_archive", "__pycache__"}
 
 
 def skip_dir(d):

@@ -32,7 +32,7 @@ MANIFEST = os.path.join(ROOT, "MANIFEST.sha256")
 TOP = "Vibecoding规范/"
 
 # 绝不允许进入发布包的目录前缀与文件名特征
-FORBIDDEN_DIRS = {"_archive", "_dist", "__pycache__"}
+FORBIDDEN_DIRS = {".git", "_archive", "_dist", "__pycache__"}
 FORBIDDEN_SUFFIXES = (".pyc", ".tmp")
 
 
