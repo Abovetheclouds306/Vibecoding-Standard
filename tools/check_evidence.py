@@ -4,7 +4,12 @@
 检查现有 ``templates/EVIDENCE-template.md.template`` 形态的 Markdown 记录，
 不修改任务状态、不写回证据，也不判断测试是否覆盖了完整需求。
 
+必需输入：证据文件路径。
+``--task-status`` 决定是否执行 DONE 完整性检查：省略时不判 PASS，返回 2（UNKNOWN），
+避免把「未执行的检查」呈现为通过。
+
 退出码：0=PASS；1=FAIL；2=UNKNOWN/NOT_CHECKED（输入不足以作出判断）。
+FAIL 优先于 UNKNOWN：同时存在两类结论时返回 1。
 """
 from __future__ import annotations
 
@@ -127,7 +132,25 @@ def _validate_timestamp(value: str) -> list[str]:
     return issues
 
 
-def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
+def _is_acceptance_header(cells: list[str]) -> bool:
+    """识别真正的验收表头，避免把任意后续表格当成验收记录。
+
+    同时要求 ID 列与结果类列：只有「验收 ID」字样的无关表格不会被误判，
+    而列名被改写的第二个验收表仍能被检出（宁可 UNKNOWN，不可假 PASS）。
+    """
+    has_id = any("验收 ID" in cell or "Acceptance" in cell for cell in cells)
+    has_outcome = any(
+        "命令" in cell or "Command" in cell or "结论" in cell or "Result" in cell for cell in cells
+    )
+    return has_id and has_outcome
+
+
+def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str], list[int]]:
+    """解析首个连续验收表，并返回其余验收表的行号（1 基）。
+
+    返回值第三项用于「额外验收表」诊断：门禁不支持跨表聚合验证，
+    检出额外表时必须如实报 UNKNOWN，而不是默认不存在遗漏。
+    """
     errors: list[str] = []
     header_index = None
     headers: list[str] = []
@@ -135,11 +158,11 @@ def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
         if not line.lstrip().startswith("|") or "|" not in line[1:]:
             continue
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if any("验收 ID" in cell or "Acceptance" in cell for cell in cells):
+        if _is_acceptance_header(cells):
             header_index, headers = index, cells
             break
     if header_index is None:
-        return [], ["缺少验收表（需要包含‘验收 ID’或‘Acceptance’列）。"]
+        return [], ["缺少验收表（需要包含‘验收 ID’或‘Acceptance’列）。"], []
     try:
         id_col = next(i for i, cell in enumerate(headers) if "验收 ID" in cell or "Acceptance" in cell)
         command_col = next(i for i, cell in enumerate(headers) if "命令" in cell or "Command" in cell)
@@ -148,7 +171,7 @@ def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
         evidence_col = next(i for i, cell in enumerate(headers) if "证据" in cell or "Evidence" in cell)
         limit_col = next(i for i, cell in enumerate(headers) if "限制" in cell or "Limit" in cell)
     except StopIteration:
-        return [], ["验收表缺少命令、退出码、结论、证据路径或限制列。"]
+        return [], ["验收表缺少命令、退出码、结论、证据路径或限制列。"], []
 
     rows = []
     reading_rows = False
@@ -174,17 +197,25 @@ def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
         })
     if not rows:
         errors.append("验收表没有可检查的验收记录。")
-    return rows, errors
+    # 首个连续验收表之后若还有验收表，说明存在未被检查的验收记录，不能默认为无遗漏。
+    extra_headers = [
+        offset
+        for offset, line in enumerate(lines[header_index + 1 :], start=header_index + 2)
+        if line.lstrip().startswith("|")
+        and _is_acceptance_header([cell.strip() for cell in line.strip().strip("|").split("|")])
+    ]
+    return rows, errors, extra_headers
 
 
 def check(path: str, expected_task: str | None, expected_acceptance: list[str], task_status: str | None,
           required_paths: list[str]) -> tuple[int, list[str]]:
     diagnostics: list[str] = []
+    status = task_status.upper() if task_status else None
     try:
         with open(path, encoding="utf-8") as handle:
             lines = handle.read().splitlines()
-    except OSError as exc:
-        return 1, [f"无法读取证据文件: {exc}"]
+    except (OSError, UnicodeDecodeError) as exc:
+        return 1, [f"FAIL: 无法读取证据文件: {exc}"]
 
     base_dir = os.path.dirname(os.path.abspath(path))
     task = _value(lines, ("Task", "任务 ID", "任务"))
@@ -206,8 +237,13 @@ def check(path: str, expected_task: str | None, expected_acceptance: list[str], 
     if _is_missing(environment):
         diagnostics.append("UNKNOWN: 未记录执行环境。")
 
-    rows, parse_errors = _parse_rows(lines)
+    rows, parse_errors, extra_headers = _parse_rows(lines)
     diagnostics.extend(f"FAIL: {error}" for error in parse_errors)
+    if extra_headers:
+        diagnostics.append(
+            f"UNKNOWN: 检测到 {len(extra_headers)} 个额外验收表（行号：{', '.join(str(n) for n in extra_headers)}）；"
+            "门禁只解析首个连续验收表，不支持跨表聚合验证，无法判定这些验收记录是否已通过，因此不返回 PASS。"
+        )
     seen_ids = set()
     row_results = []
     for row in rows:
@@ -220,6 +256,8 @@ def check(path: str, expected_task: str | None, expected_acceptance: list[str], 
         result = row["result"]
         if result not in ALLOWED:
             diagnostics.append(f"FAIL: {rid} 的结论不在允许集合: {result!r}")
+        elif result == "FAIL":
+            diagnostics.append(f"FAIL: {rid} 验收结论为 FAIL。")
         evidence_known = False
         if not _is_missing(row["evidence"]):
             if _is_external_reference(row["evidence"]):
@@ -258,17 +296,20 @@ def check(path: str, expected_task: str | None, expected_acceptance: list[str], 
         overall = overall.upper()
         if overall not in ALLOWED:
             diagnostics.append(f"FAIL: 总结论不在允许集合: {overall}")
+        elif overall == "FAIL":
+            diagnostics.append("FAIL: 总结论明确为 FAIL。")
         elif overall == "PASS" and any(result in {"FAIL", "BLOCKED", "NOT_RUN"} for result in row_results):
             diagnostics.append("FAIL: 总结论 PASS 与验收行存在非 PASS 结论矛盾。")
 
-    if task_status and task_status.upper() == "DONE":
+    if status == "DONE":
         if not expected_acceptance:
             diagnostics.append("UNKNOWN: 未提供必要验收集合，无法判断 DONE 是否覆盖完整 DoD。")
-        elif not rows:
-            diagnostics.append("FAIL: DONE 缺少必要验收记录。")
         else:
             required_results = {row["id"]: row["result"] for row in rows if row["id"] in expected_acceptance}
-            incomplete = [rid for rid in expected_acceptance if required_results.get(rid) != "PASS"]
+            incomplete = [
+                rid for rid in expected_acceptance
+                if rid in required_results and required_results[rid] != "PASS"
+            ]
             if incomplete:
                 diagnostics.append(f"FAIL: 必要验收未通过或不适用，不能 DONE: {', '.join(incomplete)}")
             optional_blockers = [
@@ -277,12 +318,16 @@ def check(path: str, expected_task: str | None, expected_acceptance: list[str], 
             ]
             if optional_blockers:
                 diagnostics.append(f"FAIL: 存在未处置的非必要失败/阻塞/未执行记录: {', '.join(optional_blockers)}")
+    elif status is None:
+        diagnostics.append("UNKNOWN: 未提供任务状态，未执行 DONE 完整性检查；门禁不能据此判定 PASS。")
 
     if any(item.startswith("FAIL:") for item in diagnostics):
         return 1, diagnostics
     if any(item.startswith("UNKNOWN:") for item in diagnostics):
         return 2, diagnostics
-    return 0, ["PASS: 证据字段和验收记录满足门禁；不代表需求覆盖充分或替代独立 Review。"]
+    if status == "DONE":
+        return 0, ["PASS: 证据结构与 DONE 完整性检查通过；不代表需求覆盖充分或替代独立 Review。"]
+    return 0, [f"PASS: 证据结构检查通过（任务状态 {status}）；未执行 DONE 完整性检查。"]
 
 
 def main(argv: list[str]) -> int:
@@ -290,7 +335,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("evidence", help="现有证据 Markdown 文件")
     parser.add_argument("--task-id", help="期望的任务 ID")
     parser.add_argument("--acceptance-id", action="append", default=[], help="必须出现的验收 ID；task-status=DONE 时作为必要验收集合，可重复")
-    parser.add_argument("--task-status", choices=["DONE", "REVIEW", "IN_PROGRESS", "BLOCKED"])
+    parser.add_argument(
+        "--task-status", type=str.upper, choices=["DONE", "REVIEW", "IN_PROGRESS", "BLOCKED"],
+        help="任务当前状态。DONE 会执行完整性检查；省略时不判 PASS 并返回 2（UNKNOWN）。",
+    )
     parser.add_argument("--require-path", action="append", default=[], help="必须存在的证据路径；相对路径以证据文件目录为基准，可重复")
     args = parser.parse_args(argv)
     code, diagnostics = check(args.evidence, args.task_id, args.acceptance_id, args.task_status, args.require_path)
