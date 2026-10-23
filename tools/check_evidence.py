@@ -23,7 +23,8 @@ EXTERNAL_PREFIXES = ("http://", "https://", "s3://", "gs://", "az://", "artifact
 TIMEZONE_RE = re.compile(
     r"(?:\b(?:UTC|GMT)\b|[zZ]\b|[+-]\d{2}:?\d{2}\b|\b[A-Za-z]+/[A-Za-z_]+\b)"
 )
-TIME_CONTENT_RE = re.compile(r"(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,4}|\b\d{1,2}:\d{2}(?::\d{2})?\b)")
+DATE_CONTENT_RE = re.compile(r"\d{4}[-/.]\d{1,2}[-/.]\d{1,4}")
+CLOCK_CONTENT_RE = re.compile(r"\b\d{1,2}:\d{2}(?::\d{2})?\b")
 MANUAL_STEP_RE = re.compile(r"(?:人工检查|人工核对|人工审查|manual(?:\s+check)?)", re.I)
 
 
@@ -62,8 +63,12 @@ def _has_timezone(value: str) -> bool:
     return bool(TIMEZONE_RE.search(value))
 
 
-def _has_time_content(value: str) -> bool:
-    return bool(TIME_CONTENT_RE.search(value))
+def _has_date(value: str) -> bool:
+    return bool(DATE_CONTENT_RE.search(value))
+
+
+def _has_clock(value: str) -> bool:
+    return bool(CLOCK_CONTENT_RE.search(value))
 
 
 def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
@@ -138,10 +143,13 @@ def check(path: str, expected_task: str | None, expected_acceptance: list[str], 
         diagnostics.append(f"FAIL: 任务 ID {task!r} 与期望值 {expected_task!r} 不一致。")
     if _is_missing(timestamp):
         diagnostics.append("UNKNOWN: 缺少时间记录。")
-    elif not _has_time_content(timestamp):
-        diagnostics.append("UNKNOWN: 时间记录格式无法可靠识别。")
-    elif not _has_timezone(timestamp):
-        diagnostics.append("UNKNOWN: 时间记录缺少可识别的时区。")
+    else:
+        if not _has_date(timestamp):
+            diagnostics.append("UNKNOWN: 时间记录缺少可识别的日期。")
+        if not _has_clock(timestamp):
+            diagnostics.append("UNKNOWN: 时间记录缺少可识别的具体时刻。")
+        if not _has_timezone(timestamp):
+            diagnostics.append("UNKNOWN: 时间记录缺少可识别的时区。")
     if _is_missing(baseline):
         diagnostics.append("UNKNOWN: 未记录代码版本或工作区标识。")
     if _is_missing(environment):

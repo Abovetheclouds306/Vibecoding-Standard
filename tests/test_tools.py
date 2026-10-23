@@ -155,12 +155,22 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertIn("矛盾", result.stdout)
 
     def test_time_and_timezone_are_required(self) -> None:
-        valid = self.run_check(evidence_text("PASS"), "--task-id", "TASK-001")
-        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+        for valid_time in (
+            "2026-10-23 12:00 Asia/Shanghai",
+            "2026-10-23T12:00:00+08:00",
+            "2026-10-23 04:00 UTC",
+        ):
+            valid = self.run_check(
+                evidence_text("PASS").replace("Time: 2026-10-23 12:00 Asia/Shanghai", f"Time: {valid_time}"),
+                "--task-id", "TASK-001",
+            )
+            self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
         for invalid_time in (
             "",
             "<日期、时间、时区>",
             "UTC",
+            "2026-10-23 UTC",
+            "12:00 UTC",
             "2026-10-23 12:00",
         ):
             content = evidence_text("PASS").replace("Time: 2026-10-23 12:00 Asia/Shanghai", f"Time: {invalid_time}")
@@ -185,11 +195,16 @@ class EvidenceGateTests(unittest.TestCase):
     def test_done_distinguishes_optional_na_from_required_acceptance(self) -> None:
         optional_na = evidence_text("PASS")
         optional_na = optional_na.replace(
-            "结论：PASS",
-            "| AC-OPTIONAL | N/A | N/A | N/A | N/A | 与本任务无关：不适用 |\n\n结论：PASS",
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |",
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |\n| AC-OPTIONAL | N/A | N/A | N/A | N/A | 与本任务无关：不适用 |",
         )
         result = self.run_check(optional_na, "--task-id", "TASK-001", "--task-status", "DONE", "--acceptance-id", "AC-001")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        ignored_row_guard = optional_na.replace("与本任务无关：不适用", "N/A")
+        result = self.run_check(ignored_row_guard, "--task-id", "TASK-001", "--task-status", "DONE", "--acceptance-id", "AC-001")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("AC-OPTIONAL", result.stdout)
 
         required_na = evidence_text("N/A", command="N/A", exit_code="N/A", evidence="N/A", limit="明确不适用")
         result = self.run_check(required_na, "--task-id", "TASK-001", "--task-status", "DONE", "--acceptance-id", "AC-001")
