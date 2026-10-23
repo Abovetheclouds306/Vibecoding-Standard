@@ -130,7 +130,7 @@ Claude Code 是否读取 `AGENTS.md`，由「Project instructions」设置决定
 
 证据只证明其对应版本与环境。代码变化后应评估哪些验证需要重新执行。
 
-可使用仓库提供的只读 `tools/check_evidence.py` 检查现有证据模板的字段、验收记录和明显矛盾。门禁输出 `UNKNOWN` 时不得当作 PASS；字段齐全或证据文件存在不代表测试充分，也不替代人工或独立 Review。
+可使用仓库提供的只读 `tools/check_evidence.py` 检查现有证据模板的字段、验收记录和明显矛盾。检查 `DONE` 时，必要验收 ID 必须来自任务权威来源或显式参数；未提供必要验收集合时输出 `UNKNOWN`，不得宣称完整 DoD 已通过。证据路径相对值以证据文件目录为基准；HTTP、对象存储或其他外部受控索引无法在本地验证时输出 `UNKNOWN`，不简单判定为本地缺失。门禁输出 `UNKNOWN` 时不得当作 PASS；字段齐全或证据文件存在不代表测试充分，也不替代人工或独立 Review。
 
 ## 10. Spec 与 ADR
 

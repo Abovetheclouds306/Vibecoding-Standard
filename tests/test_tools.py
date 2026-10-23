@@ -140,7 +140,10 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertEqual(no_execution.returncode, 1)
 
     def test_blocked_and_missing_acceptance_cannot_be_done(self) -> None:
-        blocked = self.run_check(evidence_text("BLOCKED", command="N/A", exit_code="N/A", evidence="N/A", limit="服务不可用"), "--task-status", "DONE")
+        blocked = self.run_check(
+            evidence_text("BLOCKED", command="N/A", exit_code="N/A", evidence="N/A", limit="服务不可用"),
+            "--task-status", "DONE", "--acceptance-id", "AC-001",
+        )
         self.assertEqual(blocked.returncode, 1)
         missing = self.run_check(evidence_text("PASS"), "--acceptance-id", "AC-002")
         self.assertEqual(missing.returncode, 1)
@@ -150,6 +153,85 @@ class EvidenceGateTests(unittest.TestCase):
         result = self.run_check(content)
         self.assertEqual(result.returncode, 1)
         self.assertIn("矛盾", result.stdout)
+
+    def test_time_and_timezone_are_required(self) -> None:
+        valid = self.run_check(evidence_text("PASS"), "--task-id", "TASK-001")
+        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+        for invalid_time in (
+            "",
+            "<日期、时间、时区>",
+            "UTC",
+            "2026-10-23 12:00",
+        ):
+            content = evidence_text("PASS").replace("Time: 2026-10-23 12:00 Asia/Shanghai", f"Time: {invalid_time}")
+            result = self.run_check(content, "--task-id", "TASK-001")
+            self.assertNotEqual(result.returncode, 0, invalid_time)
+            self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+
+    def test_pass_command_must_be_real_and_manual_na_is_explicit(self) -> None:
+        for command in ("N/A", "无", ""):
+            content = evidence_text("PASS", command=command)
+            result = self.run_check(content, "--task-id", "TASK-001")
+            self.assertNotEqual(result.returncode, 0, command)
+        manual = evidence_text(
+            "PASS", command="人工检查：核对页面状态", exit_code="N/A", limit="由审查者核对并记录"
+        )
+        result = self.run_check(manual, "--task-id", "TASK-001")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        automated_failure = evidence_text("PASS", command="python -V", exit_code="1")
+        result = self.run_check(automated_failure, "--task-id", "TASK-001")
+        self.assertEqual(result.returncode, 1)
+
+    def test_done_distinguishes_optional_na_from_required_acceptance(self) -> None:
+        optional_na = evidence_text("PASS")
+        optional_na = optional_na.replace(
+            "结论：PASS",
+            "| AC-OPTIONAL | N/A | N/A | N/A | N/A | 与本任务无关：不适用 |\n\n结论：PASS",
+        )
+        result = self.run_check(optional_na, "--task-id", "TASK-001", "--task-status", "DONE", "--acceptance-id", "AC-001")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        required_na = evidence_text("N/A", command="N/A", exit_code="N/A", evidence="N/A", limit="明确不适用")
+        result = self.run_check(required_na, "--task-id", "TASK-001", "--task-status", "DONE", "--acceptance-id", "AC-001")
+        self.assertEqual(result.returncode, 1)
+        no_reason_na = evidence_text("N/A", command="N/A", exit_code="N/A", evidence="N/A", limit="N/A")
+        result = self.run_check(no_reason_na, "--task-id", "TASK-001")
+        self.assertNotEqual(result.returncode, 0)
+
+        no_authoritative_range = self.run_check(evidence_text("PASS"), "--task-id", "TASK-001", "--task-status", "DONE")
+        self.assertEqual(no_authoritative_range.returncode, 2)
+        self.assertNotIn("== 证据门禁: PASS ==", no_authoritative_range.stdout)
+
+    def test_not_run_and_blocked_require_real_reasons(self) -> None:
+        for result_name in ("NOT_RUN", "BLOCKED"):
+            valid = self.run_check(evidence_text(result_name, command="N/A", exit_code="N/A", evidence="N/A", limit="依赖服务不可用"))
+            self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+            for reason in ("N/A", "无", ""):
+                invalid = self.run_check(evidence_text(result_name, command="N/A", exit_code="N/A", evidence="N/A", limit=reason))
+                self.assertNotEqual(invalid.returncode, 0, (result_name, reason))
+
+    def test_external_evidence_and_following_tables_are_not_false_failures(self) -> None:
+        external = evidence_text("PASS", evidence="https://example.invalid/artifact.log")
+        result = self.run_check(external, "--task-id", "TASK-001", "--require-path", "https://example.invalid/index")
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+
+        unrelated = evidence_text("PASS") + "\n\n## 其他说明\n\n| 字段 | 值 |\n| --- | --- |\n| note | ignored |\n"
+        result = self.run_check(unrelated, "--task-id", "TASK-001")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_gate_is_read_only(self) -> None:
+        temp = Path(tempfile.mkdtemp(prefix="vibecoding-evidence-readonly-"))
+        self.addCleanup(shutil.rmtree, temp, ignore_errors=True)
+        (temp / "tools").mkdir()
+        shutil.copy2(TOOLS / "check_evidence.py", temp / "tools" / "check_evidence.py")
+        (temp / "artifact.log").write_text("executed\n", encoding="utf-8")
+        evidence = temp / "evidence.md"
+        evidence.write_text(evidence_text("PASS"), encoding="utf-8")
+        before = evidence.read_bytes()
+        result = run_tool(temp, "check_evidence.py", str(evidence), "--task-id", "TASK-001")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(evidence.read_bytes(), before)
 
 
 if __name__ == "__main__":

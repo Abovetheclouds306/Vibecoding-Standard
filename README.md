@@ -118,7 +118,7 @@ Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.7-候选-完�
 ## 五、校验与升级
 
 - `MANIFEST.sha256` 列出发布包内全部文件的 SHA-256（不含清单自身，也不含 `_archive/`、`_review_*/`、`_dist/`）。
-- 校验：`python tools/verify_manifest.py` 和 `python tools/check_links.py`；证据模板可用只读 `python tools/check_evidence.py <evidence.md> --task-id <TASK-xxx>` 检查；重新打包：`python tools/release_zip.py build <输出 zip>`（构建前会强制验证清单与文件哈希）。
+- 校验：`python tools/verify_manifest.py` 和 `python tools/check_links.py`；证据模板可用只读 `python tools/check_evidence.py <evidence.md> --task-id <TASK-xxx>` 检查。检查 `DONE` 时还需用任务权威来源提供必要 `--acceptance-id`；相对证据路径以证据文件目录为基准，外部索引无法本地验证时输出 `UNKNOWN`。重新打包：`python tools/release_zip.py build <输出 zip>`（构建前会强制验证清单与文件哈希）。
 - Windows 亦可用 `Get-FileHash -Algorithm SHA256` 校验关键文件。
 - 版本号保持在文档与 ZIP 文件名中；**不把目录重命名为 `Vibecoding规范1.2.7`**。
 - 新项目可一次性采用；老项目应先试点一个任务，避免批量重构。
