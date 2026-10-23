@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import os
 import re
 import sys
@@ -21,10 +22,19 @@ ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
 MISSING_MARKERS = {"", "N/A", "NA", "NONE", "NULL", "无", "未填写", "未填"}
 EXTERNAL_PREFIXES = ("http://", "https://", "s3://", "gs://", "az://", "artifact://", "oci://")
 TIMEZONE_RE = re.compile(
-    r"(?:\b(?:UTC|GMT)\b|[zZ]\b|[+-]\d{2}:?\d{2}\b|\b[A-Za-z]+/[A-Za-z_]+\b)"
+    r"(?:\b(?:UTC|GMT)\b|[zZ]\b|[+-]\d{2}:?\d{2}\b|\b[A-Za-z][A-Za-z0-9_-]*/[A-Za-z0-9_+.-]+\b)"
 )
 DATE_CONTENT_RE = re.compile(r"\d{4}[-/.]\d{1,2}[-/.]\d{1,4}")
 CLOCK_CONTENT_RE = re.compile(r"\b\d{1,2}:\d{2}(?::\d{2})?\b")
+TIMESTAMP_RE = re.compile(
+    r"(?P<year>\d{4})[-/.](?P<month>\d{1,2})[-/.](?P<day>\d{1,2})"
+    r"(?:T|\s+)"
+    r"(?P<hour>\d{1,2}):(?P<minute>\d{2})(?::(?P<second>\d{2}))?\s*"
+    r"(?P<timezone>UTC|GMT|Z|[+-]\d{2}:?\d{2}|[A-Za-z][A-Za-z0-9_-]*/[A-Za-z0-9_+.-]+)",
+    re.I,
+)
+NUMERIC_TZ_RE = re.compile(r"(?P<sign>[+-])(?P<hour>\d{2}):?(?P<minute>\d{2})$")
+IANA_TZ_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*/[A-Za-z0-9_+.-]+$")
 MANUAL_STEP_RE = re.compile(r"(?:人工检查|人工核对|人工审查|manual(?:\s+check)?)", re.I)
 
 
@@ -69,6 +79,52 @@ def _has_date(value: str) -> bool:
 
 def _has_clock(value: str) -> bool:
     return bool(CLOCK_CONTENT_RE.search(value))
+
+
+def _validate_timestamp(value: str) -> list[str]:
+    """Validate common timestamp forms without requiring a system tz database."""
+    issues = []
+    if not _has_date(value):
+        issues.append("UNKNOWN: 时间记录缺少可识别的日期。")
+    if not _has_clock(value):
+        issues.append("UNKNOWN: 时间记录缺少可识别的具体时刻。")
+    if not _has_timezone(value):
+        issues.append("UNKNOWN: 时间记录缺少可识别的时区。")
+    if issues:
+        return issues
+
+    match = TIMESTAMP_RE.fullmatch(value.strip())
+    if not match:
+        return ["UNKNOWN: 时间记录格式无法可靠解析。"]
+
+    fields = match.groupdict()
+    try:
+        dt.date(int(fields["year"]), int(fields["month"]), int(fields["day"]))
+    except ValueError:
+        issues.append("UNKNOWN: 时间记录的日期取值非法。")
+    try:
+        dt.time(int(fields["hour"]), int(fields["minute"]), int(fields["second"] or 0))
+    except ValueError:
+        issues.append("UNKNOWN: 时间记录的具体时刻取值非法。")
+
+    timezone = fields["timezone"]
+    numeric = NUMERIC_TZ_RE.fullmatch(timezone)
+    if numeric:
+        offset_hour = int(numeric.group("hour"))
+        offset_minute = int(numeric.group("minute"))
+        if offset_minute > 59 or offset_hour > 14 or (offset_hour == 14 and offset_minute != 0):
+            issues.append("UNKNOWN: 时间记录的 UTC 偏移量非法。")
+        else:
+            try:
+                delta = dt.timedelta(hours=offset_hour, minutes=offset_minute)
+                if numeric.group("sign") == "-":
+                    delta = -delta
+                dt.timezone(delta)
+            except (OverflowError, ValueError):
+                issues.append("UNKNOWN: 时间记录的 UTC 偏移量无法可靠解析。")
+    elif timezone.upper() not in {"UTC", "GMT", "Z"} and not IANA_TZ_RE.fullmatch(timezone):
+        issues.append("UNKNOWN: 时间记录的时区标记无法可靠解析。")
+    return issues
 
 
 def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
@@ -144,12 +200,7 @@ def check(path: str, expected_task: str | None, expected_acceptance: list[str], 
     if _is_missing(timestamp):
         diagnostics.append("UNKNOWN: 缺少时间记录。")
     else:
-        if not _has_date(timestamp):
-            diagnostics.append("UNKNOWN: 时间记录缺少可识别的日期。")
-        if not _has_clock(timestamp):
-            diagnostics.append("UNKNOWN: 时间记录缺少可识别的具体时刻。")
-        if not _has_timezone(timestamp):
-            diagnostics.append("UNKNOWN: 时间记录缺少可识别的时区。")
+        diagnostics.extend(_validate_timestamp(timestamp))
     if _is_missing(baseline):
         diagnostics.append("UNKNOWN: 未记录代码版本或工作区标识。")
     if _is_missing(environment):

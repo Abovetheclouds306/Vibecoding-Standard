@@ -159,6 +159,7 @@ class EvidenceGateTests(unittest.TestCase):
             "2026-10-23 12:00 Asia/Shanghai",
             "2026-10-23T12:00:00+08:00",
             "2026-10-23 04:00 UTC",
+            "2024-02-29 12:00 UTC",
         ):
             valid = self.run_check(
                 evidence_text("PASS").replace("Time: 2026-10-23 12:00 Asia/Shanghai", f"Time: {valid_time}"),
@@ -172,11 +173,29 @@ class EvidenceGateTests(unittest.TestCase):
             "2026-10-23 UTC",
             "12:00 UTC",
             "2026-10-23 12:00",
+            "2026-99-99 25:61 UTC",
+            "2026-13-01 12:00 UTC",
+            "2026-02-30 12:00 UTC",
+            "2025-02-29 12:00 UTC",
+            "2026-10-23 24:00 UTC",
+            "2026-10-23 12:61 UTC",
+            "2026-10-23 12:00 +25:00",
         ):
             content = evidence_text("PASS").replace("Time: 2026-10-23 12:00 Asia/Shanghai", f"Time: {invalid_time}")
             result = self.run_check(content, "--task-id", "TASK-001")
             self.assertNotEqual(result.returncode, 0, invalid_time)
             self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+        for invalid_time, marker in (
+            ("2026-99-99 25:61 UTC", "日期取值非法"),
+            ("2026-10-23 24:00 UTC", "具体时刻取值非法"),
+            ("2026-10-23 12:00 +25:00", "UTC 偏移量非法"),
+        ):
+            result = self.run_check(
+                evidence_text("PASS").replace("Time: 2026-10-23 12:00 Asia/Shanghai", f"Time: {invalid_time}"),
+                "--task-id", "TASK-001",
+            )
+            self.assertNotEqual(result.returncode, 0, invalid_time)
+            self.assertIn(marker, result.stdout)
 
     def test_pass_command_must_be_real_and_manual_na_is_explicit(self) -> None:
         for command in ("N/A", "无", ""):
