@@ -9,7 +9,17 @@
 避免把「未执行的检查」呈现为通过。
 
 退出码：0=PASS；1=FAIL；2=UNKNOWN/NOT_CHECKED（输入不足以作出判断）。
-FAIL 优先于 UNKNOWN：同时存在两类结论时返回 1。
+严重度：FAIL > UNKNOWN > PASS；同时存在两类结论时返回 1。
+
+未完成语义（契约 F-01）：
+- 行结论 NOT_RUN/BLOCKED 且原因有效：非 DONE 状态记 UNKNOWN(2)，不呈现为 PASS；
+  DONE 状态由完整性检查判为 FAIL(1)。
+- 行结论 N/A 且原因有效：非必要验收可保留通过；被登记为必要验收时判 FAIL(1)。
+- 总结论 NOT_RUN/BLOCKED/N/A：DONE 状态判 FAIL(1)，其余状态记 UNKNOWN(2)。
+
+表格边界（契约 F-02/F-03）：支持 ID 列别名（验收编号/用例 ID 等），
+与主表无空行相邻的第二个验收表按表头+分隔行切分，检出即记 UNKNOWN。
+门禁不支持跨表聚合验证，检出额外验收表不代表已覆盖其中的记录。
 """
 from __future__ import annotations
 
@@ -22,6 +32,21 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 
 ALLOWED = {"PASS", "FAIL", "BLOCKED", "NOT_RUN", "N/A"}
+# 未完成类结论：存在即说明验证没有真正完成，绝不能呈现为 PASS。
+UNFINISHED = {"NOT_RUN", "BLOCKED", "N/A"}
+ID_COLUMN_TOKENS = ("验收 ID", "验收编号", "用例 ID", "Acceptance", "Case ID")
+OUTCOME_COLUMN_TOKENS = (
+    "命令", "步骤", "Command", "Step", "退出码", "Exit", "结论", "结果", "Result", "证据", "Evidence", "限制", "Limit",
+)
+# 主表必须六类列齐全：ID + 命令/步骤 + 退出码 + 结论/结果 + 证据 + 限制。
+FULL_COLUMN_GROUPS = (
+    ID_COLUMN_TOKENS,
+    ("命令", "步骤", "Command", "Step"),
+    ("退出码", "Exit"),
+    ("结论", "结果", "Result"),
+    ("证据", "Evidence"),
+    ("限制", "Limit"),
+)
 PLACEHOLDER = re.compile(r"^\s*<[^>]+>\s*$")
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
 MISSING_MARKERS = {"", "N/A", "NA", "NONE", "NULL", "无", "未填写", "未填"}
@@ -132,21 +157,62 @@ def _validate_timestamp(value: str) -> list[str]:
     return issues
 
 
-def _is_acceptance_header(cells: list[str]) -> bool:
-    """识别真正的验收表头，避免把任意后续表格当成验收记录。
+def _cells_of(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
 
-    同时要求 ID 列与结果类列：只有「验收 ID」字样的无关表格不会被误判，
-    而列名被改写的第二个验收表仍能被检出（宁可 UNKNOWN，不可假 PASS）。
+
+def _is_row_line(line: str) -> bool:
+    return line.lstrip().startswith("|") and "|" in line[1:]
+
+
+def _has_token(cells: list[str], tokens: tuple[str, ...]) -> bool:
+    return any(token.lower() in cell.lower() for token in tokens for cell in cells)
+
+
+def _find_column(headers: list[str], tokens: tuple[str, ...]) -> int:
+    for index, cell in enumerate(headers):
+        if any(token.lower() in cell.lower() for token in tokens):
+            return index
+    raise StopIteration
+
+
+def _is_acceptance_header(cells: list[str]) -> bool:
+    """宽松识别「像验收表」的表头：ID 列别名 + 至少一个验收语义列。
+
+    覆盖「验收 ID / 验收编号 / 用例 ID / Acceptance」等别名，并要求至少还有一个
+    验收语义列（命令/步骤/退出码/结论/结果/证据/限制），避免把「项目 ID｜结论」
+    之类的普通统计表当成验收表。宁可 UNKNOWN，不可假 PASS。
     """
-    has_id = any("验收 ID" in cell or "Acceptance" in cell for cell in cells)
-    has_outcome = any(
-        "命令" in cell or "Command" in cell or "结论" in cell or "Result" in cell for cell in cells
-    )
-    return has_id and has_outcome
+    return _has_token(cells, ID_COLUMN_TOKENS) and _has_token(cells, OUTCOME_COLUMN_TOKENS)
+
+
+def _is_full_acceptance_header(cells: list[str]) -> bool:
+    """主表识别：六类验收列齐全，避免被列名相似的普通表格抢占。"""
+    return all(_has_token(cells, group) for group in FULL_COLUMN_GROUPS)
+
+
+def _is_separator_line(lines: list[str], index: int) -> bool:
+    if index < 0 or index >= len(lines) or not _is_row_line(lines[index]):
+        return False
+    cells = _cells_of(lines[index])
+    return bool(cells) and all(set(cell) <= {"-", ":", " "} for cell in cells)
+
+
+def _is_acceptance_table_start(lines: list[str], index: int) -> bool:
+    """识别一个完整验收表的开始：验收表头 + 紧随其后的分隔行。
+
+    要求分隔行使得「表头 + 分隔结构」成对出现，避免把孤立的表格行误判为新表；
+    同时使与首表无空行相邻的第二个验收表能被正确切分（F-03）。
+    """
+    if index < 0 or index >= len(lines) or not _is_row_line(lines[index]):
+        return False
+    if not _is_acceptance_header(_cells_of(lines[index])):
+        return False
+    return _is_separator_line(lines, index + 1)
 
 
 def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str], list[int]]:
-    """解析首个连续验收表，并返回其余验收表的行号（1 基）。
+    """解析首个连续验收表，并返回其余验收表的表头行号（1 基）。
 
     返回值第三项用于「额外验收表」诊断：门禁不支持跨表聚合验证，
     检出额外表时必须如实报 UNKNOWN，而不是默认不存在遗漏。
@@ -155,32 +221,36 @@ def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str], list
     header_index = None
     headers: list[str] = []
     for index, line in enumerate(lines):
-        if not line.lstrip().startswith("|") or "|" not in line[1:]:
+        if not _is_row_line(line):
             continue
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if _is_acceptance_header(cells):
+        cells = _cells_of(line)
+        if _is_full_acceptance_header(cells):
             header_index, headers = index, cells
             break
     if header_index is None:
-        return [], ["缺少验收表（需要包含‘验收 ID’或‘Acceptance’列）。"], []
+        return [], ["缺少验收表（需要包含验收 ID、命令/步骤、退出码、结论、证据路径与限制列）。"], []
     try:
-        id_col = next(i for i, cell in enumerate(headers) if "验收 ID" in cell or "Acceptance" in cell)
-        command_col = next(i for i, cell in enumerate(headers) if "命令" in cell or "Command" in cell)
-        exit_col = next(i for i, cell in enumerate(headers) if "退出码" in cell or "Exit" in cell)
-        result_col = next(i for i, cell in enumerate(headers) if "结论" in cell or "Result" in cell)
-        evidence_col = next(i for i, cell in enumerate(headers) if "证据" in cell or "Evidence" in cell)
-        limit_col = next(i for i, cell in enumerate(headers) if "限制" in cell or "Limit" in cell)
+        id_col = _find_column(headers, ID_COLUMN_TOKENS)
+        command_col = _find_column(headers, FULL_COLUMN_GROUPS[1])
+        exit_col = _find_column(headers, FULL_COLUMN_GROUPS[2])
+        result_col = _find_column(headers, FULL_COLUMN_GROUPS[3])
+        evidence_col = _find_column(headers, FULL_COLUMN_GROUPS[4])
+        limit_col = _find_column(headers, FULL_COLUMN_GROUPS[5])
     except StopIteration:
         return [], ["验收表缺少命令、退出码、结论、证据路径或限制列。"], []
 
     rows = []
     reading_rows = False
-    for line in lines[header_index + 1 :]:
-        if not line.lstrip().startswith("|"):
+    for offset in range(header_index + 1, len(lines)):
+        line = lines[offset]
+        # 与首表相邻、无空行分隔的第二个验收表：停止本表取值，交给额外表诊断处理。
+        if _is_acceptance_table_start(lines, offset):
+            break
+        if not _is_row_line(line):
             if reading_rows:
                 break
             continue
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        cells = _cells_of(line)
         if not cells or all(set(cell) <= {"-", ":", " "} for cell in cells):
             continue
         if len(cells) <= max(id_col, command_col, exit_col, result_col, evidence_col, limit_col):
@@ -199,10 +269,9 @@ def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str], list
         errors.append("验收表没有可检查的验收记录。")
     # 首个连续验收表之后若还有验收表，说明存在未被检查的验收记录，不能默认为无遗漏。
     extra_headers = [
-        offset
-        for offset, line in enumerate(lines[header_index + 1 :], start=header_index + 2)
-        if line.lstrip().startswith("|")
-        and _is_acceptance_header([cell.strip() for cell in line.strip().strip("|").split("|")])
+        offset + 1
+        for offset in range(header_index + 1, len(lines))
+        if _is_acceptance_table_start(lines, offset)
     ]
     return rows, errors, extra_headers
 
@@ -279,8 +348,16 @@ def check(path: str, expected_task: str | None, expected_acceptance: list[str], 
                 diagnostics.append(f"FAIL: {rid} 标记 PASS 但没有证据路径。")
             elif manual_na and not evidence_known and not _is_external_reference(row["evidence"]):
                 diagnostics.append(f"FAIL: {rid} 的人工检查证据不可定位。")
-        elif result in {"NOT_RUN", "BLOCKED", "N/A"} and not _has_reason(row["limit"]):
+        elif result in UNFINISHED and not _has_reason(row["limit"]):
             diagnostics.append(f"FAIL: {rid} 为 {result} 但没有有效原因或限制说明。")
+        elif result == "N/A" and rid in expected_acceptance:
+            # 契约 8：有理由的非必要 N/A 可保留允许行为，必要验收的 N/A 不能视为通过。
+            diagnostics.append(f"FAIL: 必要验收 {rid} 为 N/A，不能视为通过。")
+        elif result in {"NOT_RUN", "BLOCKED"} and status != "DONE":
+            # 契约 4：非 DONE 状态下，原因有效的未执行/阻塞记录不是失败，但绝不能呈现为 PASS。
+            diagnostics.append(
+                f"UNKNOWN: {rid} 为 {result}，验证未完成，不能作为通过依据（原因：{row['limit']}）。"
+            )
         row_results.append(result)
 
     missing_acceptance = [rid for rid in expected_acceptance if rid not in seen_ids]
@@ -300,6 +377,12 @@ def check(path: str, expected_task: str | None, expected_acceptance: list[str], 
             diagnostics.append("FAIL: 总结论明确为 FAIL。")
         elif overall == "PASS" and any(result in {"FAIL", "BLOCKED", "NOT_RUN"} for result in row_results):
             diagnostics.append("FAIL: 总结论 PASS 与验收行存在非 PASS 结论矛盾。")
+        elif overall in UNFINISHED:
+            # 总结论自述未完成：与 DONE 状态直接矛盾（确定失败）；其余状态不得呈现为 PASS。
+            if status == "DONE":
+                diagnostics.append(f"FAIL: 总结论为 {overall}，与任务状态 DONE 矛盾，验证未完成。")
+            else:
+                diagnostics.append(f"UNKNOWN: 总结论为 {overall}，验证未完成，门禁不能据此判定 PASS。")
 
     if status == "DONE":
         if not expected_acceptance:

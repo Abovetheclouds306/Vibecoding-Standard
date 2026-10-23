@@ -237,18 +237,34 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertNotIn("== 证据门禁: PASS ==", no_authoritative_range.stdout)
 
     def test_not_run_and_blocked_require_real_reasons(self) -> None:
+        # 契约 4：非 DONE 状态下，原因有效的 NOT_RUN/BLOCKED 不是失败，但绝不能呈现为 PASS。
         for result_name in ("NOT_RUN", "BLOCKED"):
             valid = self.run_check(
                 evidence_text(result_name, command="N/A", exit_code="N/A", evidence="N/A", limit="依赖服务不可用"),
                 "--task-status", "REVIEW",
             )
-            self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+            self.assertEqual(valid.returncode, 2, valid.stdout + valid.stderr)
+            self.assertIn("== 证据门禁: UNKNOWN ==", valid.stdout)
+            self.assertNotIn("== 证据门禁: PASS ==", valid.stdout)
+            self.assertIn("验证未完成", valid.stdout)
             for reason in ("N/A", "无", ""):
                 invalid = self.run_check(
                     evidence_text(result_name, command="N/A", exit_code="N/A", evidence="N/A", limit=reason),
                     "--task-status", "REVIEW",
                 )
-                self.assertNotEqual(invalid.returncode, 0, (result_name, reason))
+                self.assertEqual(invalid.returncode, 1, (result_name, reason, invalid.stdout))
+            # 契约 5：DONE 状态下未执行的必要验收是确定失败，不是 UNKNOWN。
+            done = self.run_check(
+                evidence_text(result_name, command="N/A", exit_code="N/A", evidence="N/A", limit="依赖服务不可用"),
+                "--task-status", "DONE", "--acceptance-id", "AC-001",
+            )
+            self.assertEqual(done.returncode, 1, (result_name, done.stdout))
+            self.assertIn("== 证据门禁: FAIL ==", done.stdout)
+        # 反向：合法完成（全 PASS）的 REVIEW/IN_PROGRESS 证据不得因本判定被误判为失败。
+        for status in ("REVIEW", "IN_PROGRESS", "BLOCKED"):
+            legal = self.run_check(evidence_text("PASS"), "--task-id", "TASK-001", "--task-status", status)
+            self.assertEqual(legal.returncode, 0, (status, legal.stdout + legal.stderr))
+            self.assertIn("== 证据门禁: PASS ==", legal.stdout)
 
     def test_external_evidence_and_following_tables_are_not_false_failures(self) -> None:
         external = evidence_text("PASS", evidence="https://example.invalid/artifact.log")
@@ -422,6 +438,122 @@ class EvidenceGateTests(unittest.TestCase):
         result = self.run_check("", "--task-id", "TASK-001", "--task-status", "DONE", "--acceptance-id", "AC-001")
         self.assertEqual(result.returncode, 1)
         self.assertIn("== 证据门禁: FAIL ==", result.stdout)
+        self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+
+    def test_unfinished_overall_conclusion_is_never_pass(self) -> None:
+        # 总结论自述未完成：非 DONE 不得呈现为 PASS；DONE 与「未完成」直接矛盾 → FAIL。
+        for overall in ("NOT_RUN", "BLOCKED"):
+            content = evidence_text("PASS").replace("结论：PASS", f"结论：{overall}")
+            result = self.run_check(content, "--task-id", "TASK-001", "--task-status", "REVIEW")
+            self.assertEqual(result.returncode, 2, (overall, result.stdout))
+            self.assertIn(f"总结论为 {overall}", result.stdout)
+            self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+            done = self.run_check(
+                content, "--task-id", "TASK-001", "--task-status", "DONE", "--acceptance-id", "AC-001"
+            )
+            self.assertEqual(done.returncode, 1, (overall, done.stdout))
+            self.assertIn("== 证据门禁: FAIL ==", done.stdout)
+        # 反向：总结论 PASS 且验收行全 PASS 的记录仍必须通过。
+        clean = self.run_check(evidence_text("PASS"), "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        self.assertIn("== 证据门禁: PASS ==", clean.stdout)
+
+    def test_optional_na_allows_but_required_na_never_passes(self) -> None:
+        content = evidence_text("PASS").replace(
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |",
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |\n"
+            "| AC-NA | N/A | N/A | N/A | N/A | 与本任务无关：不适用 |",
+        )
+        # 契约 8 前段：有理由的非必要 N/A 保留允许行为，IN_PROGRESS/REVIEW/DONE 均不得误判。
+        for args in (
+            ("--task-status", "REVIEW"),
+            ("--task-status", "IN_PROGRESS"),
+            ("--task-status", "DONE", "--acceptance-id", "AC-001"),
+        ):
+            optional = self.run_check(content, "--task-id", "TASK-001", *args)
+            self.assertEqual(optional.returncode, 0, (args, optional.stdout + optional.stderr))
+            self.assertIn("== 证据门禁: PASS ==", optional.stdout)
+        # 契约 8 后段：被登记为必要验收的 N/A 不能视为通过，与任务状态无关。
+        for status in ("REVIEW", "IN_PROGRESS"):
+            required = self.run_check(
+                content, "--task-id", "TASK-001", "--task-status", status, "--acceptance-id", "AC-NA"
+            )
+            self.assertEqual(required.returncode, 1, (status, required.stdout))
+            self.assertIn("必要验收 AC-NA 为 N/A", required.stdout)
+            self.assertNotIn("== 证据门禁: PASS ==", required.stdout)
+
+    def test_alias_id_column_acceptance_table_is_detected(self) -> None:
+        head = evidence_text("PASS").split("| 验收 ID")[0]
+        table = (
+            "| 验收 ID | 命令 / 步骤 | 退出码 | 结论 | 证据路径 | 限制 |\n"
+            "| --- | --- | --- | --- | --- | --- |\n"
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |\n"
+        )
+        second = (
+            "| {id_column} | 命令 / 步骤 | 退出码 | 结论 | 证据路径 | 限制 |\n"
+            "| --- | --- | --- | --- | --- | --- |\n"
+            "| AC-002 | pytest -q tests/e2e | 1 | FAIL | artifact.log | 全部失败 |\n"
+        )
+        # 首表全 PASS + 第二表全 FAIL：ID 列改名也必须检出，且不得返回 PASS。
+        for id_column in ("验收 ID", "验收编号", "用例 ID", "Acceptance"):
+            content = head + table + "\n补充记录：\n\n" + second.format(id_column=id_column)
+            result = self.run_check(content, "--task-id", "TASK-001", "--task-status", "REVIEW")
+            self.assertEqual(result.returncode, 2, (id_column, result.stdout))
+            self.assertIn("额外验收表", result.stdout)
+            self.assertIn("行号", result.stdout)
+            self.assertIn("不支持跨表聚合验证", result.stdout)
+            self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+        # 首表已有确定 FAIL 时必须为 FAIL(1)，不得因检出额外表而降级为 2。
+        fail_first = head + table.replace(
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |",
+            "| AC-001 | pytest -q | 1 | FAIL | artifact.log | 失败 |",
+        ) + "\n补充记录：\n\n" + second.format(id_column="用例 ID")
+        result = self.run_check(fail_first, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("== 证据门禁: FAIL ==", result.stdout)
+        self.assertNotIn("== 证据门禁: UNKNOWN ==", result.stdout)
+        # 反向：列名含 ID 但非验收 ID 别名的普通表格不得误报为额外验收表。
+        unrelated = evidence_text("PASS") + "\n## 统计\n\n| 项目 ID | 结论 |\n| --- | --- |\n| X-1 | 完成 |\n"
+        result = self.run_check(unrelated, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("额外验收表", result.stdout)
+
+    def test_adjacent_acceptance_tables_are_split(self) -> None:
+        head = evidence_text("PASS").split("| 验收 ID")[0]
+        adjacent = head + (
+            "| 验收 ID | 命令 / 步骤 | 退出码 | 结论 | 证据路径 | 限制 |\n"
+            "| --- | --- | --- | --- | --- | --- |\n"
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |\n"
+            "| 验收 ID | 命令 / 步骤 | 退出码 | 结论 | 证据路径 | 限制 |\n"
+            "| --- | --- | --- | --- | --- | --- |\n"
+            "| AC-002 | pytest -q tests/e2e | 1 | FAIL | artifact.log | 全部失败 |\n"
+        )
+        result = self.run_check(adjacent, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("额外验收表", result.stdout)
+        self.assertIn("行号：11", result.stdout)
+        # 第二表表头不得被当作验收数据行，否则会出现虚假的「验收 ID 无效」诊断。
+        self.assertNotIn("验收 ID 无效", result.stdout)
+        self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+        # 首表存在确定 FAIL 时仍必须是 FAIL(1)。
+        fail_first = adjacent.replace(
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |",
+            "| AC-001 | pytest -q | 1 | FAIL | artifact.log | 失败 |",
+        )
+        result = self.run_check(fail_first, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("== 证据门禁: FAIL ==", result.stdout)
+        # 反向：与首表相邻的无关表格不得被误报为「额外验收表」。
+        unrelated = head + (
+            "| 验收 ID | 命令 / 步骤 | 退出码 | 结论 | 证据路径 | 限制 |\n"
+            "| --- | --- | --- | --- | --- | --- |\n"
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |\n"
+            "| 字段 | 值 |\n"
+            "| --- | --- |\n"
+            "| note | ignored |\n"
+        )
+        result = self.run_check(unrelated, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertNotIn("额外验收表", result.stdout)
         self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
 
 

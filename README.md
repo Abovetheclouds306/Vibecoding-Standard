@@ -118,7 +118,7 @@ Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.7-候选-完�
 ## 五、校验与升级
 
 - `MANIFEST.sha256` 列出发布包内全部文件的 SHA-256（不含清单自身，也不含 `_archive/`、`_review_*/`、`_dist/`）。
-- 校验：`python tools/verify_manifest.py` 和 `python tools/check_links.py`；证据模板可用只读 `python tools/check_evidence.py <evidence.md> --task-id <TASK-xxx> --task-status <REVIEW|DONE|IN_PROGRESS|BLOCKED>` 检查。检查 `DONE` 时还需用任务权威来源提供必要 `--acceptance-id`，否则输出 `UNKNOWN`。省略 `--task-status` 时门禁不判 `PASS`，输出 `UNKNOWN` 并声明未执行 DONE 完整性检查；验收行或总结论为 `FAIL` 时判 `FAIL`。退出码 0=PASS、1=FAIL、2=UNKNOWN，`FAIL` 优先。相对证据路径以证据文件目录为基准，外部索引无法本地验证时输出 `UNKNOWN`。门禁只解析首个连续验收表，检出额外验收表时输出 `UNKNOWN` 并给出表头行号，不支持跨表聚合验证，不应据此宣称已覆盖全部验收记录。重新打包：`python tools/release_zip.py build <输出 zip>`（构建前会强制验证清单与文件哈希）。
+- 校验：`python tools/verify_manifest.py` 和 `python tools/check_links.py`；证据模板可用只读 `python tools/check_evidence.py <evidence.md> --task-id <TASK-xxx> --task-status <REVIEW|DONE|IN_PROGRESS|BLOCKED>` 检查。检查 `DONE` 时还需用任务权威来源提供必要 `--acceptance-id`，否则输出 `UNKNOWN`。省略 `--task-status` 时门禁不判 `PASS`，输出 `UNKNOWN` 并声明未执行 DONE 完整性检查；验收行或总结论为 `FAIL` 时判 `FAIL`。退出码 0=PASS、1=FAIL、2=UNKNOWN，严重度为 `FAIL` > `UNKNOWN` > `PASS`。相对证据路径以证据文件目录为基准，外部索引无法本地验证时输出 `UNKNOWN`。未完成记录不呈现为通过：验收行 `NOT_RUN`/`BLOCKED` 且原因有效时，非 `DONE` 输出 `UNKNOWN`、`DONE` 判 `FAIL`；总结论 `NOT_RUN`/`BLOCKED`/`N/A` 同理；必要验收的 `N/A` 判 `FAIL`。门禁只解析首个连续验收表，检出额外验收表时输出 `UNKNOWN` 并给出表头行号（ID 列支持「验收 ID / 验收编号 / 用例 ID / Acceptance」等别名，与首表无空行相邻的第二表按表头+分隔行切分），不支持跨表聚合验证，不应据此宣称已覆盖全部验收记录。报告门禁结论时必须区分「证据结构检查通过」「任务验收通过」与「DONE 完整性判断通过」，不得混为同一结论。重新打包：`python tools/release_zip.py build <输出 zip>`（构建前会强制验证清单与文件哈希）。
 - Windows 亦可用 `Get-FileHash -Algorithm SHA256` 校验关键文件。
 - 版本号保持在文档与 ZIP 文件名中；**不把目录重命名为 `Vibecoding规范1.2.7`**。
 - 新项目可一次性采用；老项目应先试点一个任务，避免批量重构。
