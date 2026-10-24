@@ -19,10 +19,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(ROOT, "MANIFEST.sha256")
 # 本地追溯材料与缓存目录：不进发布包，也不计入"未登记文件"
 SELF_DIRS = {".git", "_dist", "_archive", "__pycache__"}
+# 仓库自身 CI 配置目录（相对根目录，精确匹配）：属仓库集成设施，不进入分发给用户的
+# 规范发布包，因此不计入"未登记文件"。此处只排除这一条明确路径；`.github/` 下的其他
+# 内容（如 ISSUE_TEMPLATE、CODEOWNERS）仍按未登记文件校验，不会被一并放过。
+SELF_PATHS = {".github/workflows"}
 
 
-def skip_dir(d):
-    return d in SELF_DIRS or d.startswith("_review_")
+def skip_dir(name):
+    """按目录名排除本地材料与缓存（对任意层级生效）。"""
+    return name in SELF_DIRS or name.startswith("_review_")
+
+
+def skip_path(rel):
+    """按相对根目录的完整路径排除仓库自身 CI 配置（仅精确匹配，不按目录名匹配）。"""
+    return rel in SELF_PATHS
 
 
 def sha256(path):
@@ -68,7 +78,14 @@ def main():
     registered = set(entries)
     unregistered = []
     for dirpath, dirnames, filenames in os.walk(ROOT):
-        dirnames[:] = [d for d in dirnames if not skip_dir(d)]
+        rel_dir = os.path.relpath(dirpath, ROOT).replace(os.sep, "/")
+        kept = []
+        for name in dirnames:
+            child = name if rel_dir == "." else f"{rel_dir}/{name}"
+            if skip_dir(name) or skip_path(child):
+                continue
+            kept.append(name)
+        dirnames[:] = kept
         for fn in filenames:
             rel = os.path.relpath(os.path.join(dirpath, fn), ROOT).replace(os.sep, "/")
             # 普通 clone 是 `.git/` 目录，worktree 则是根目录 `.git` 指针文件；两者都不属于发布内容。

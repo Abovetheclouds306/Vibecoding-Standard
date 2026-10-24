@@ -86,6 +86,62 @@ class ManifestRegressionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("清单无效", result.stdout)
 
+    # ---- CI 集成轮：`.github/workflows` 精确排除的正反判据 ----
+    # Owner 裁定：CI 配置属仓库集成设施，不进发布包；排除规则必须只作用于这一条明确路径，
+    # 不得无条件放过整个 `.github`，否则其他未登记文件会被一并掩盖。
+    def test_repo_ci_workflows_are_excluded_from_unregistered_scan(self) -> None:
+        temp = make_manifest_fixture()
+        self.addCleanup(shutil.rmtree, temp, ignore_errors=True)
+        workflows = temp / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text("name: repo-self-check\n", encoding="utf-8")
+        result = run_tool(temp, "verify_manifest.py")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("== 清单校验: PASS", result.stdout)
+        # 未登记与失败项都必须是 0：证明是"排除"生效，而不是被降级显示。
+        self.assertIn("失败 0", result.stdout)
+        self.assertIn("未登记 0", result.stdout)
+        self.assertNotIn("ci.yml", result.stdout)
+
+    def test_non_ci_paths_under_github_are_still_reported(self) -> None:
+        # 反向判据：`.github/` 下除 `workflows` 以外的内容、以及 workflows 的近似路径，
+        # 都必须仍被判为未登记文件并导致非零退出码。
+        for rel in (
+            ".github/CODEOWNERS",
+            ".github/ISSUE_TEMPLATE/bug_report.md",
+            ".github/workflows-old/ci.yml",
+            ".github/workflows2/ci.yml",
+            "docs/.github/workflows/ci.yml",
+        ):
+            with self.subTest(rel=rel):
+                temp = make_manifest_fixture()
+                self.addCleanup(shutil.rmtree, temp, ignore_errors=True)
+                target = temp / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("fixture\n", encoding="utf-8")
+                result = run_tool(temp, "verify_manifest.py")
+                self.assertEqual(result.returncode, 1, (rel, result.stdout))
+                self.assertIn(rel, result.stdout)
+                self.assertIn("== 清单校验: FAIL", result.stdout)
+
+    def test_release_package_excludes_repo_ci_configuration(self) -> None:
+        # CI 配置既不登记进清单，也不得混入发布包；其余打包结构与条目数保持不变。
+        temp = make_manifest_fixture(copy_verify=True, copy_release=True)
+        self.addCleanup(shutil.rmtree, temp, ignore_errors=True)
+        workflows = temp / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text("name: repo-self-check\n", encoding="utf-8")
+        archive = temp / "release.zip"
+        built = run_tool(temp, "release_zip.py", "build", str(archive))
+        self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+        with zipfile.ZipFile(archive) as zf:
+            names = zf.namelist()
+        # 3 个登记文件 + 清单自身；不含任何 .github 成员。
+        self.assertEqual(len(names), 4, names)
+        self.assertFalse([n for n in names if ".github" in n], names)
+        verified = run_tool(temp, "release_zip.py", "verify", str(archive))
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+
 
 class ReleaseRegressionTests(unittest.TestCase):
     def test_release_build_verify_and_extra_member(self) -> None:

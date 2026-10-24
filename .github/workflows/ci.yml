@@ -1,0 +1,88 @@
+# Vibecoding 规范仓库自检（最小 CI）。
+#
+# 设计约束（与规范契约一致）：
+# 1. 本文件属于仓库集成设施，不进入分发给用户的规范发布包，也不登记进 MANIFEST.sha256。
+#    `tools/verify_manifest.py` 只精确排除 `.github/workflows` 这一条路径，`.github/` 下的
+#    其他内容（ISSUE_TEMPLATE、CODEOWNERS 等）仍按未登记文件校验。
+# 2. 每个校验步骤都必须把工具的真实退出码传出去：全部步骤由 bash `-e -o pipefail` 执行，
+#    任一命令非零即整步失败、进而整条工作流失败。禁止 `|| true`，禁止无条件
+#    `continue-on-error`，禁止任何把非零状态改写成成功的包装。
+# 3. 下游契约固定为 0=PASS / 1=FAIL / 2=UNKNOWN。CI 不把 2 当通过、也不跳过：
+#    UNKNOWN 的语义由 tests/test_tools.py 中逐条 `assertEqual(returncode, 2)` 的断言验证，
+#    本工作流运行全量单元测试即执行这些断言；同时对工具退出码做精确断言（见最后一步），
+#    期望值与实际值不符即失败。
+# 4. 只读权限、不使用任何业务凭据、不访问真实业务环境。
+
+name: repo-self-check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  self-check:
+    name: 清单 / 文档 / 测试 / 发布包
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 先跑全量单元测试：它同时覆盖工具的 0/1/2 三态断言（UNKNOWN 不得表现为 PASS）。
+      # 该步在仓库内会产生 __pycache__，属 verify_manifest.py 已声明的排除目录，不影响下一步。
+      - name: 全量单元测试
+        run: python -m unittest discover -s tests -v
+
+      - name: 清单完整性
+        run: python tools/verify_manifest.py
+
+      - name: 文档相对链接与关键路径
+        run: >-
+          python tools/check_links.py
+          --require AI_PROJECT_STANDARD.md README.md docs/Agent接入指南.md
+          agents/Codex.md agents/Claude-Code.md templates tools tests
+
+      # 输出 ZIP 放在 runner 临时目录（仓库之外），避免污染清单校验的"未登记文件"判定。
+      - name: 发布包构建与校验
+        env:
+          RELEASE_ZIP: ${{ runner.temp }}/vibecoding-standard.zip
+        run: |
+          python tools/release_zip.py build "$RELEASE_ZIP"
+          python tools/release_zip.py verify "$RELEASE_ZIP"
+
+      # 精确断言退出码：只接受完全相等的值，绝不把 2（UNKNOWN/用法错误）当成 0（PASS）。
+      # 上面各步已证明"通过时返回 0"；本步补证"失败返回 1""非通过返回 2"并逐一区分。
+      - name: 工具退出码契约（0=PASS / 1=FAIL / 2=UNKNOWN）
+        env:
+          ABSENT_ZIP: ${{ runner.temp }}/absent.zip
+        run: |
+          set -euo pipefail
+
+          expect_rc() {
+            want="$1"
+            shift
+            rc=0
+            set +e
+            "$@"
+            rc=$?
+            set -e
+            if [ "$rc" -ne "$want" ]; then
+              echo "::error::退出码不符：期望 ${want}，实际 ${rc}；命令：$*"
+              return 1
+            fi
+            echo "ok: 退出码 ${rc} == 期望 ${want} -> $*"
+          }
+
+          # 用法错误：必须是非零的 2，不得被当作通过。
+          expect_rc 2 python tools/release_zip.py inspect
+          # 校验失败：必须是 1（此处是文件不存在导致的校验失败），不得降级为 2 或 0。
+          expect_rc 1 python tools/release_zip.py verify "$ABSENT_ZIP"
