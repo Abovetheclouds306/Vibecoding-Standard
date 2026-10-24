@@ -35,18 +35,17 @@ ALLOWED = {"PASS", "FAIL", "BLOCKED", "NOT_RUN", "N/A"}
 # 未完成类结论：存在即说明验证没有真正完成，绝不能呈现为 PASS。
 UNFINISHED = {"NOT_RUN", "BLOCKED", "N/A"}
 ID_COLUMN_TOKENS = ("验收 ID", "验收编号", "用例 ID", "Acceptance", "Case ID")
-OUTCOME_COLUMN_TOKENS = (
-    "命令", "步骤", "Command", "Step", "退出码", "Exit", "结论", "结果", "Result", "证据", "Evidence", "限制", "Limit",
-)
+# 结果语义列：报告「已经发生了什么」，属验证范畴。
+RESULT_COLUMN_TOKENS = ("结论", "结果", "Result", "Outcome", "实际")
+# 前瞻/设计语义列：描述「应当发生什么」，属需求设计范畴，不得当成执行结论。
+PROSPECTIVE_COLUMN_TOKENS = ("预期", "期望", "Expected", "Expect", "前置", "Precondition")
+COMMAND_COLUMN_TOKENS = ("命令", "步骤", "Command", "Step")
+EXIT_COLUMN_TOKENS = ("退出码", "Exit")
+EVIDENCE_COLUMN_TOKENS = ("证据", "Evidence")
+LIMIT_COLUMN_TOKENS = ("限制", "Limit")
 # 主表必须六类列齐全：ID + 命令/步骤 + 退出码 + 结论/结果 + 证据 + 限制。
-FULL_COLUMN_GROUPS = (
-    ID_COLUMN_TOKENS,
-    ("命令", "步骤", "Command", "Step"),
-    ("退出码", "Exit"),
-    ("结论", "结果", "Result"),
-    ("证据", "Evidence"),
-    ("限制", "Limit"),
-)
+# 其中结果列须为「结果语义」，不能用「预期结果」这类前瞻列充数（见 _is_result_column）。
+FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 PLACEHOLDER = re.compile(r"^\s*<[^>]+>\s*$")
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
 MISSING_MARKERS = {"", "N/A", "NA", "NONE", "NULL", "无", "未填写", "未填"}
@@ -176,19 +175,45 @@ def _find_column(headers: list[str], tokens: tuple[str, ...]) -> int:
     raise StopIteration
 
 
-def _is_acceptance_header(cells: list[str]) -> bool:
-    """宽松识别「像验收表」的表头：ID 列别名 + 至少一个验收语义列。
+def _is_result_column(cell: str) -> bool:
+    """判断某列是否为「结果语义」列（对已发生结果的报告）。
 
-    覆盖「验收 ID / 验收编号 / 用例 ID / Acceptance」等别名，并要求至少还有一个
-    验收语义列（命令/步骤/退出码/结论/结果/证据/限制），避免把「项目 ID｜结论」
-    之类的普通统计表当成验收表。宁可 UNKNOWN，不可假 PASS。
+    「预期结果」「期望值」「Expected Result」「前置条件」属前瞻/设计语义，
+    即使字面含「结果」也不算执行结论，必须先排除。
     """
-    return _has_token(cells, ID_COLUMN_TOKENS) and _has_token(cells, OUTCOME_COLUMN_TOKENS)
+    text = cell.lower()
+    if any(token.lower() in text for token in PROSPECTIVE_COLUMN_TOKENS):
+        return False
+    return any(token.lower() in text for token in RESULT_COLUMN_TOKENS)
+
+
+def _is_acceptance_header(cells: list[str]) -> bool:
+    """宽松识别「像验收表」的表头：ID 列别名 + 至少一个结果语义列。
+
+    要求存在结果语义列（结论/结果/实际结论 等）而非任意语义列，
+    使「用例 ID｜预期结果｜前置条件」这类测试设计清单不被当成执行验收表；
+    同时「用例 ID｜实际结论」「验收编号｜结论」等真实记录仍能被检出。
+    """
+    return _has_token(cells, ID_COLUMN_TOKENS) and any(_is_result_column(cell) for cell in cells)
 
 
 def _is_full_acceptance_header(cells: list[str]) -> bool:
-    """主表识别：六类验收列齐全，避免被列名相似的普通表格抢占。"""
-    return all(_has_token(cells, group) for group in FULL_COLUMN_GROUPS)
+    """主表识别：六类验收列齐全（结果列须为结果语义，不得用预期列充数）。"""
+    return (
+        _has_token(cells, ID_COLUMN_TOKENS)
+        and _has_token(cells, COMMAND_COLUMN_TOKENS)
+        and _has_token(cells, EXIT_COLUMN_TOKENS)
+        and any(_is_result_column(cell) for cell in cells)
+        and _has_token(cells, EVIDENCE_COLUMN_TOKENS)
+        and _has_token(cells, LIMIT_COLUMN_TOKENS)
+    )
+
+
+def _find_result_column(headers: list[str]) -> int:
+    for index, cell in enumerate(headers):
+        if _is_result_column(cell):
+            return index
+    raise StopIteration
 
 
 def _is_separator_line(lines: list[str], index: int) -> bool:
@@ -198,12 +223,8 @@ def _is_separator_line(lines: list[str], index: int) -> bool:
     return bool(cells) and all(set(cell) <= {"-", ":", " "} for cell in cells)
 
 
-def _is_acceptance_table_start(lines: list[str], index: int) -> bool:
-    """识别一个完整验收表的开始：验收表头 + 紧随其后的分隔行。
-
-    要求分隔行使得「表头 + 分隔结构」成对出现，避免把孤立的表格行误判为新表；
-    同时使与首表无空行相邻的第二个验收表能被正确切分（F-03）。
-    """
+def _is_complete_table_start(lines: list[str], index: int) -> bool:
+    """完整验收表开始：验收表头 + 紧随其后的分隔行。"""
     if index < 0 or index >= len(lines) or not _is_row_line(lines[index]):
         return False
     if not _is_acceptance_header(_cells_of(lines[index])):
@@ -211,42 +232,79 @@ def _is_acceptance_table_start(lines: list[str], index: int) -> bool:
     return _is_separator_line(lines, index + 1)
 
 
-def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str], list[int]]:
-    """解析首个连续验收表，并返回其余验收表的表头行号（1 基）。
+def _fenced_lines(lines: list[str]) -> set[int]:
+    """返回处于 Markdown 围栏代码块内（含围栏定界行）的行号集合。
 
-    返回值第三项用于「额外验收表」诊断：门禁不支持跨表聚合验证，
-    检出额外表时必须如实报 UNKNOWN，而不是默认不存在遗漏。
+    代码块内的表格是语法示例，不参与执行证据扫描。
+    """
+    fenced: set[int] = set()
+    fence: tuple[str, int] | None = None
+    for index, line in enumerate(lines):
+        match = FENCE_RE.match(line.strip())
+        if fence is None:
+            if match:
+                token = match.group(1)
+                fence = (token[0], len(token))
+                fenced.add(index)
+        else:
+            fenced.add(index)
+            if match:
+                token = match.group(1)
+                if token[0] == fence[0] and len(token) >= fence[1]:
+                    fence = None
+    return fenced
+
+
+def _parse_rows(
+    lines: list[str],
+) -> tuple[list[dict[str, str]], list[str], list[int], list[int], list[int]]:
+    """解析首个完整验收表，并返回疑似验收表的行号（1 基）。
+
+    返回值第三~五项分别为：主表之后的完整额外验收表、主表之后格式不完整
+    （缺表头分隔行）的疑似验收表、主表之前的疑似验收记录表。
+
+    门禁不支持跨表聚合验证：任一类存在都必须如实报 UNKNOWN，
+    不允许因为「表不完整 / 位置在表前」就静默忽略（否则等于假 PASS）。
     """
     errors: list[str] = []
+    fenced = _fenced_lines(lines)
     header_index = None
     headers: list[str] = []
     for index, line in enumerate(lines):
-        if not _is_row_line(line):
+        if index in fenced or not _is_row_line(line):
             continue
         cells = _cells_of(line)
         if _is_full_acceptance_header(cells):
             header_index, headers = index, cells
             break
     if header_index is None:
-        return [], ["缺少验收表（需要包含验收 ID、命令/步骤、退出码、结论、证据路径与限制列）。"], []
+        return [], ["缺少验收表（需要包含验收 ID、命令/步骤、退出码、结论、证据路径与限制列）。"], [], [], []
     try:
         id_col = _find_column(headers, ID_COLUMN_TOKENS)
-        command_col = _find_column(headers, FULL_COLUMN_GROUPS[1])
-        exit_col = _find_column(headers, FULL_COLUMN_GROUPS[2])
-        result_col = _find_column(headers, FULL_COLUMN_GROUPS[3])
-        evidence_col = _find_column(headers, FULL_COLUMN_GROUPS[4])
-        limit_col = _find_column(headers, FULL_COLUMN_GROUPS[5])
+        command_col = _find_column(headers, COMMAND_COLUMN_TOKENS)
+        exit_col = _find_column(headers, EXIT_COLUMN_TOKENS)
+        result_col = _find_result_column(headers)
+        evidence_col = _find_column(headers, EVIDENCE_COLUMN_TOKENS)
+        limit_col = _find_column(headers, LIMIT_COLUMN_TOKENS)
     except StopIteration:
-        return [], ["验收表缺少命令、退出码、结论、证据路径或限制列。"], []
+        return [], ["验收表缺少命令、退出码、结论、证据路径或限制列。"], [], [], []
+
+    def acceptance_like(index: int) -> bool:
+        return (
+            index not in fenced
+            and _is_row_line(lines[index])
+            and _is_acceptance_header(_cells_of(lines[index]))
+        )
 
     rows = []
     reading_rows = False
     for offset in range(header_index + 1, len(lines)):
         line = lines[offset]
-        # 与首表相邻、无空行分隔的第二个验收表：停止本表取值，交给额外表诊断处理。
-        if _is_acceptance_table_start(lines, offset):
+        # 任何「像验收表」的行（无论分隔行是否齐全）都停止本表取值：
+        # 既避免把下一张表的表头当作数据行，也避免漏掉格式不完整的表。
+        if acceptance_like(offset):
             break
-        if not _is_row_line(line):
+        if offset in fenced or not _is_row_line(line):
             if reading_rows:
                 break
             continue
@@ -267,13 +325,20 @@ def _parse_rows(lines: list[str]) -> tuple[list[dict[str, str]], list[str], list
         })
     if not rows:
         errors.append("验收表没有可检查的验收记录。")
-    # 首个连续验收表之后若还有验收表，说明存在未被检查的验收记录，不能默认为无遗漏。
-    extra_headers = [
-        offset + 1
-        for offset in range(header_index + 1, len(lines))
-        if _is_acceptance_table_start(lines, offset)
-    ]
-    return rows, errors, extra_headers
+    # 主表之后（完整 / 不完整）与主表之前的疑似验收表，都不能默认为无遗漏。
+    extra_complete: list[int] = []
+    extra_incomplete: list[int] = []
+    preceding: list[int] = []
+    for index in range(len(lines)):
+        if index == header_index or not acceptance_like(index):
+            continue
+        if index < header_index:
+            preceding.append(index + 1)
+        elif _is_complete_table_start(lines, index):
+            extra_complete.append(index + 1)
+        else:
+            extra_incomplete.append(index + 1)
+    return rows, errors, extra_complete, extra_incomplete, preceding
 
 
 def check(path: str, expected_task: str | None, expected_acceptance: list[str], task_status: str | None,
@@ -306,11 +371,23 @@ def check(path: str, expected_task: str | None, expected_acceptance: list[str], 
     if _is_missing(environment):
         diagnostics.append("UNKNOWN: 未记录执行环境。")
 
-    rows, parse_errors, extra_headers = _parse_rows(lines)
+    rows, parse_errors, extra_complete, extra_incomplete, preceding = _parse_rows(lines)
     diagnostics.extend(f"FAIL: {error}" for error in parse_errors)
-    if extra_headers:
+    if preceding:
         diagnostics.append(
-            f"UNKNOWN: 检测到 {len(extra_headers)} 个额外验收表（行号：{', '.join(str(n) for n in extra_headers)}）；"
+            f"UNKNOWN: 主验收表之前存在 {len(preceding)} 个疑似验收记录表"
+            f"（行号：{', '.join(str(n) for n in preceding)}）；"
+            "门禁只解析首个完整验收表，无法判定这些记录是否已通过，因此不返回 PASS。"
+        )
+    extra_headers = sorted(extra_complete + extra_incomplete)
+    if extra_headers:
+        qualifier = (
+            f"；其中 {len(extra_incomplete)} 个缺少表头分隔行，按疑似验收表保守处理"
+            if extra_incomplete else ""
+        )
+        diagnostics.append(
+            f"UNKNOWN: 检测到 {len(extra_headers)} 个额外验收表"
+            f"（行号：{', '.join(str(n) for n in extra_headers)}{qualifier}）；"
             "门禁只解析首个连续验收表，不支持跨表聚合验证，无法判定这些验收记录是否已通过，因此不返回 PASS。"
         )
     seen_ids = set()

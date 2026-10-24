@@ -557,5 +557,136 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
 
 
+    # ---- R2 轮：假 PASS 回归与表格识别边界（Owner R2 裁定） ----
+    _MAIN_TABLE = (
+        "| 验收 ID | 命令 / 步骤 | 退出码 | 结论 | 证据路径 | 限制 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |\n"
+    )
+    _SECOND_HEADER = "| 验收 ID | 命令 / 步骤 | 退出码 | 结论 | 证据路径 | 限制 |\n"
+    _SECOND_FAIL_ROW = "| AC-002 | pytest -q tests/e2e | 1 | FAIL | artifact.log | 全部失败 |\n"
+
+    def _head(self) -> str:
+        return evidence_text("PASS").split("| 验收 ID")[0]
+
+    def test_incomplete_extra_acceptance_table_never_passes(self) -> None:
+        # R2-F01：第二张验收表漏写 Markdown 分隔行时，旧实现把表头当数据吞掉 → 假 PASS(0)。
+        content = (
+            self._head() + self._MAIN_TABLE + "\n## 补充验收\n\n"
+            + self._SECOND_HEADER + self._SECOND_FAIL_ROW + "\n结论：PASS\n"
+        )
+        result = self.run_check(content, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("额外验收表", result.stdout)
+        self.assertIn("行号：14", result.stdout)
+        self.assertIn("缺少表头分隔行", result.stdout)
+        self.assertIn("不支持跨表聚合验证", result.stdout)
+        self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+        # 第二表表头不得被并入首表数据行而产生「验收 ID 无效」这类虚假诊断。
+        self.assertNotIn("验收 ID 无效", result.stdout)
+
+        # DONE 下更危险：旧实现会打印「DONE 完整性检查通过」。必须既不 PASS 也不宣称 DONE 通过。
+        done = self.run_check(
+            content, "--task-id", "TASK-001", "--task-status", "DONE", "--acceptance-id", "AC-001"
+        )
+        self.assertEqual(done.returncode, 2, done.stdout)
+        self.assertNotIn("DONE 完整性检查通过", done.stdout)
+        self.assertNotIn("未执行 DONE 完整性检查", done.stdout)
+        self.assertNotIn("== 证据门禁: PASS ==", done.stdout)
+
+        # 对照：补上分隔行后仍应作为额外验收表被检出，但不再带「缺少表头分隔行」限定。
+        complete = (
+            self._head() + self._MAIN_TABLE + "\n## 补充验收\n\n"
+            + self._SECOND_HEADER + "| --- | --- | --- | --- | --- | --- |\n"
+            + self._SECOND_FAIL_ROW + "\n结论：PASS\n"
+        )
+        result = self.run_check(complete, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("额外验收表", result.stdout)
+        self.assertNotIn("缺少表头分隔行", result.stdout)
+        # 对照：首表自身存在确定 FAIL 时，必须是 FAIL(1)，不得降级为 UNKNOWN。
+        fail_first = complete.replace(
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |",
+            "| AC-001 | pytest -q | 1 | FAIL | artifact.log | 失败 |",
+        )
+        result = self.run_check(fail_first, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("== 证据门禁: FAIL ==", result.stdout)
+
+    def test_preceding_suspected_acceptance_table_never_passes(self) -> None:
+        # R2-F03：主表之前的「验收编号 | 结论」简表同样是验收记录，不能在假 PASS 中被无视。
+        simple = "| 验收编号 | 结论 |\n| --- | --- |\n| AC-000 | FAIL |\n"
+        content = self._head() + simple + "\n" + self._MAIN_TABLE + "\n结论：PASS\n"
+        result = self.run_check(content, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("主验收表之前存在 1 个疑似验收记录表", result.stdout)
+        self.assertIn("行号：8", result.stdout)
+        self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+
+        # 对照：同一简表若只是普通统计（无验收语义列名），不得触发。
+        unrelated = "| 模块 | 状态 |\n| --- | --- |\n| core | ok |\n"
+        content = self._head() + unrelated + "\n" + self._MAIN_TABLE + "\n结论：PASS\n"
+        result = self.run_check(content, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertNotIn("主验收表之前存在", result.stdout)
+
+    def test_design_tables_are_not_execution_acceptance(self) -> None:
+        # R2-F02：含「用例 ID」但只有前瞻语义列（预期/前置/步骤）的表格是设计清单，不是执行结论。
+        design_tables = (
+            "| 用例 ID | 预期结果 |\n| --- | --- |\n| TC-001 | 返回 200 |\n",
+            "| 用例 ID | 前置条件 | 步骤 | 预期结果 |\n| --- | --- | --- | --- |\n| TC-001 | 已登录 | 点击 | 跳转成功 |\n",
+            "| 用例 ID | 预期 |\n| --- | --- |\n| TC-001 | 无异常 |\n",
+            "| Case ID | Expected Result |\n| --- | --- |\n| TC-1 | 200 OK |\n",
+        )
+        for table in design_tables:
+            content = self._head() + self._MAIN_TABLE + "\n## 用例设计\n\n" + table + "\n结论：PASS\n"
+            result = self.run_check(content, "--task-id", "TASK-001", "--task-status", "REVIEW")
+            self.assertEqual(result.returncode, 0, (table, result.stdout))
+            self.assertNotIn("额外验收表", result.stdout)
+        # 对照：换成实际结论语义列且含 FAIL，就必须检出——证明判定依据是结果语义而非「用例 ID」。
+        actual_tables = (
+            "| 用例 ID | 实际结论 |\n| --- | --- |\n| TC-9 | FAIL |\n",
+            "| Case ID | Result |\n| --- | --- |\n| TC-9 | FAIL |\n",
+        )
+        for table in actual_tables:
+            content = self._head() + self._MAIN_TABLE + "\n## 执行结果\n\n" + table + "\n结论：PASS\n"
+            result = self.run_check(content, "--task-id", "TASK-001", "--task-status", "REVIEW")
+            self.assertEqual(result.returncode, 2, (table, result.stdout))
+            self.assertIn("额外验收表", result.stdout)
+            self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
+
+    def test_fenced_tables_are_excluded_from_acceptance_scan(self) -> None:
+        # R2 契约：围栏代码块内的示例表格不是真实验收记录，不得计入执行证据扫描。
+        table = "| 用例 ID | 结论 |\n| --- | --- |\n| AC-900 | FAIL |\n"
+        for fence in ("```", "~~~"):
+            fenced = self._head() + self._MAIN_TABLE + f"\n## 示例\n\n{fence}text\n" + table + f"{fence}\n\n结论：PASS\n"
+            result = self.run_check(fenced, "--task-id", "TASK-001", "--task-status", "REVIEW")
+            self.assertEqual(result.returncode, 0, (fence, result.stdout))
+            self.assertIn("== 证据门禁: PASS ==", result.stdout)
+        # 对照：同一张表不加围栏就是真实的额外验收表，必须检出——证明围栏判定确实生效。
+        plain = self._head() + self._MAIN_TABLE + "\n## 执行结果\n\n" + table + "\n结论：PASS\n"
+        result = self.run_check(plain, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("额外验收表", result.stdout)
+
+    def test_extra_acceptance_table_ruling_is_unknown(self) -> None:
+        # Owner R2 裁定（非缺陷修复）：额外验收表含 FAIL 时返回 UNKNOWN(2)，
+        # 因为门禁不做跨表聚合验证，无法确认该失败是否属于本任务判定范围。
+        # Reviewer 侧原期望为 FAIL(1)，Owner 裁定以 UNKNOWN(2) 为准。
+        adjacent = self._head() + self._MAIN_TABLE + self._SECOND_HEADER + self._SECOND_FAIL_ROW + "\n结论：PASS\n"
+        result = self.run_check(adjacent, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("== 证据门禁: UNKNOWN ==", result.stdout)
+        self.assertIn("不支持跨表聚合验证", result.stdout)
+        self.assertNotIn("== 证据门禁: FAIL ==", result.stdout)
+        # 裁定的边界：正式主表中可靠解析出的 FAIL 仍必须是 FAIL(1)，UNKNOWN 不得吞掉确定的失败。
+        fail_first = adjacent.replace(
+            "| AC-001 | python -V | 0 | PASS | artifact.log | 无 |",
+            "| AC-001 | pytest -q | 1 | FAIL | artifact.log | 失败 |",
+        )
+        result = self.run_check(fail_first, "--task-id", "TASK-001", "--task-status", "REVIEW")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("== 证据门禁: FAIL ==", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
