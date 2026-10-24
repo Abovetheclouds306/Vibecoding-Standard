@@ -18,7 +18,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(ROOT, "MANIFEST.sha256")
 # 本地追溯材料与缓存目录：不进发布包，也不计入"未登记文件"
-SELF_DIRS = {"_dist", "_archive", "__pycache__"}
+SELF_DIRS = {".git", "_dist", "_archive", "__pycache__"}
 
 
 def skip_dir(d):
@@ -71,7 +71,8 @@ def main():
         dirnames[:] = [d for d in dirnames if not skip_dir(d)]
         for fn in filenames:
             rel = os.path.relpath(os.path.join(dirpath, fn), ROOT).replace(os.sep, "/")
-            if rel == "MANIFEST.sha256":
+            # 普通 clone 是 `.git/` 目录，worktree 则是根目录 `.git` 指针文件；两者都不属于发布内容。
+            if rel in {"MANIFEST.sha256", ".git"}:
                 continue
             if rel not in registered:
                 unregistered.append(rel)

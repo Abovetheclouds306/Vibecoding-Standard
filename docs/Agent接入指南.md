@@ -1,6 +1,6 @@
 # 将 Vibecoding 规范接入自己的 AI Agent
 
-> 适用版本：**Vibecoding Standard v1.2.6**（本指南随同规范版本更新）。本文是**接入操作指南**，不是新的母规范。治理要求以 [`../AI_PROJECT_STANDARD.md`](../AI_PROJECT_STANDARD.md) 为准；Codex / Claude Code 特殊机制分别以 [`../agents/Codex.md`](../agents/Codex.md)、[`../agents/Claude-Code.md`](../agents/Claude-Code.md) 为准。
+> 适用版本：**Vibecoding Standard v1.2.7 候选**（本指南随同规范版本更新）。本文是**接入操作指南**，不是新的母规范。治理要求以 [`../AI_PROJECT_STANDARD.md`](../AI_PROJECT_STANDARD.md) 为准；Codex / Claude Code 特殊机制分别以 [`../agents/Codex.md`](../agents/Codex.md)、[`../agents/Claude-Code.md`](../agents/Claude-Code.md) 为准。
 
 ## 一、最推荐：直接把规范交给 Agent，让它帮你接入
 
@@ -15,7 +15,7 @@
 ### 直接发给 Agent 的接入提示词
 
 ```text
-请在当前业务项目中接入我的统一工程规范 Vibecoding Standard v1.2.6。
+请在当前业务项目中接入我的统一工程规范 Vibecoding Standard v1.2.7 候选。
 
 规范私有仓库：https://github.com/Abovetheclouds306/Vibecoding-Standard
 如果你无法访问私有仓库，请先检查我提供的本地规范目录或正式 ZIP；仍不可访问时如实报告 BLOCKED，不得猜测或伪称已读取。
@@ -97,7 +97,7 @@ Nexus-Testing/
 
 ```markdown
 ## 统一工程规范
-- 标准：Vibecoding Standard v1.2.6。
+- 标准：Vibecoding Standard v1.2.7 候选。
 - 母规范：`F:\DOSS_Project\Vibecoding-Standard\AI_PROJECT_STANDARD.md`。
 - 采纳的标准 commit：`<以 git rev-parse HEAD 实测的 40 位 SHA>`。
 - 每次接受新任务，在修改代码前先实际读取母规范并确认适用条款；如无法读取，明确报告，禁止假称已遵守。
@@ -146,7 +146,7 @@ Nexus-Testing/
 1. 在**新会话**启动 Agent，工作目录明确指向业务项目。
 2. 请 Agent 指出：当前规范的**版本和实际文件路径**、项目唯一任务来源、允许修改范围、测试命令、完成时的证据与交接要求。
 3. 核实结果确实来自项目入口及母规范；用命令、实际文件内容或工具提供的上下文检查辅助验证。必要时用**预先写入规则文件、不可猜的内容敏感口令**做隔离探针（不能让它靠随意搜索猜中）。
-4. 选一项**离线、只读或低风险任务**，检查是否在开工前识别边界、真实运行允许的验证、正确区分 `PASS / FAIL / BLOCKED / NOT_RUN`、检查临时探针去向并留存交接。
+4. 选一项**离线、只读或低风险任务**，检查是否在开工前识别边界、真实运行允许的验证、正确区分 `PASS / FAIL / BLOCKED / NOT_RUN`、交付前从原始需求反向审查遗漏、检查临时探针去向并留存交接。
 5. 记录 Agent 名称、版本、加载配置、规范 commit、业务工作区版本、任务 ID、实际观察与未测部分。只有实测通过，才称该组合已完成接入验证。
 
 注意：`tools/verify_manifest.py` 验证的是**规范副本的文件完整性**，不是“Agent 自动加载成功”或“Agent 必然遵守规范”的证明。
