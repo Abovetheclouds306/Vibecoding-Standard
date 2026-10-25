@@ -28,9 +28,14 @@
 只读三样：项目入口文件、`config.json`、`HANDOFF.md`。规则原文按需 grep：
 
 ```bash
-grep -n "第 8 节" .vibecoding/vendor/vibecoding-standard/AI_PROJECT_STANDARD.md 2>/dev/null \
+# 规范正文的位置由 config.json 给出（项目内相对路径 / 项目外绝对路径），不要凭猜
+STD=$(python -c "import json;print(json.load(open('.vibecoding/config.json'))['standard_vendor_path'])")
+grep -n "第 8 节" "$STD/AI_PROJECT_STANDARD.md" \
   || grep -n "第 8 节" <skill>/vendor/vibecoding-standard/AI_PROJECT_STANDARD.md
 ```
+
+> 若 `$STD` 不可读：说明技能已卸载或项目已移动。此时**不得假装规范已加载**，先重装技能并重跑
+> `vb_init.py --project . --apply` 重定位，再继续本任务。
 
 ### 3. 小步改
 - 一次只做一类改动；改动前先用 `git status` 确认没有夹带他人改动。

@@ -7,20 +7,34 @@
 3. 写入 tracked 文件前若工作区脏，需 --allow-dirty。
 4. 标准副本校验不过则拒绝初始化（退出码 1），不写任何文件。
 5. 写盘前做可预见检查（目标类型冲突、路径不得越出项目目录）；任何检查不过即拒绝，且尚未写任何文件。
-6. 所有写盘经 WriteJournal 登记：可控异常按逆序回滚本次写入（只回滚本进程创建/修改、
-   且当前内容仍等于本进程写入值的文件；不删除用户原有文件），失败返回非零退出码并打印诊断。
-   **边界**：进程被强杀（SIGKILL）、断电、文件系统故障等无法捕获的终止不在回滚范围内，
-   因此不做跨文件原子提交，也不宣称"任何异常都零残留"。
+6. 所有写盘经 WriteJournal 登记：**先登记恢复记录再写入**；单条写入先写同目录临时文件，
+   再 `os.replace` 原子替换（同卷语义），因此单条写入失败不会留下半截目标文件。
+   可控异常按逆序回滚本次写入（只回滚本进程创建/修改、且当前内容仍等于本进程写入值的文件；
+   不删除用户原有文件），失败返回非零退出码并打印诊断；无法还原时输出 `ResidualRisk`
+   与受影响路径及实际残留状态，且**不再宣称"已全部回滚"**。
+7. 每次实际写入前重新核对目标真实位置：越出项目目录、或预检后该路径真实位置发生变化
+   （被替换为符号链接 / Junction / 其他重解析点），一律拒绝继续初始化并非零退出。
+   回滚同样受此约束，不跟随被替换的路径去删改项目外数据。
+   **边界**：这是把 TOCTOU 窗口压到最小，**不是消除**——预检与写入之间仍存在极短窗口，
+   `SIGKILL` / 断电 / 文件系统自身非原子行为无法由脚本保证，因此不做跨文件原子提交。
 
-退出码：0 = 成功/无需变更；1 = 拒绝或出错（含已回滚的失败）；2 = 需要人工决定（块内容 differs）。
+退出码：0 = 成功/无需变更（含 `--update-block` 已按授权更新块）；
+        1 = 拒绝或出错（含已完成回滚、或部分回滚仍有残留的失败）；
+        2 = 仍需人工决定（标记块 differs 且未获 `--update-block` 授权）。
+
+「接入缺失」语义（F-2）：本脚本只使用**已安装技能自带的 vendor 副本**作为规范真值源，
+从不把整份规范复制进项目。因此它同时要求：vendor 实际存在、可读、且与签收版本校验一致；
+任一不满足即拒绝初始化并说明缺什么。**不宣称"未安装技能也能使用完整规范"。**
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 
 SKILL_VERSION = "0.1.0"
@@ -37,7 +51,10 @@ BLOCK = """<!-- vibecoding:begin skill={sv} standard={std} -->
 
 本项目遵循 Vibecoding Standard v{std}。以下为不可省略的最低动作，细节见 `.vibecoding/` 与所用的 Agent Skill `vibecoding`。
 
-- **唯一规则真值源**：`.vibecoding/vendor/vibecoding-standard/`（只读，与签收版本逐字节相同）。规则改动只能回到标准仓库发版，不得在此就地修改。
+- **唯一规则真值源**：Vibecoding Standard v{std} 正文，只读，与签收版本逐字节相同。规则改动只能回到标准仓库发版，不得就地修改。
+  - **规范位置**：以 `.vibecoding/config.json` 的 `standard_vendor_path` 字段为准；该目录须含 `AI_PROJECT_STANDARD.md` 与 `MANIFEST.sha256`。
+  - **本次初始化解算**：`{vendor_path}`（{vendor_condition}）。
+  - **路径不可读时**：说明技能已卸载或项目已移动。此时**不得假装规范已加载**，也不得引用未读到的条款；须重新安装技能后执行 `vb_init.py --project . --apply` 重定位。
 - **开工前**：读 `.vibecoding/config.json` 与 `.vibecoding/HANDOFF.md`；确认分支、HEAD 与工作区状态。
 - **验证纪律**：结论必须附命令与**实际退出码**。`0=PASS / 1=FAIL / 2=UNKNOWN`；`2` 既不得当通过，也不得当"跳过"。
 - **禁止假 PASS**：未运行写 `NOT_RUN`；为了让门禁变绿而放宽测试断言属禁止行为。
@@ -145,7 +162,7 @@ def detect_eol(path: str) -> bytes:
 
 
 def _write_raw(path: str, data: bytes) -> None:
-    """唯一写盘出口（单测可替换以注入可控异常）。"""
+    """唯一内容写盘出口（单测可替换以注入可控异常）。"""
     with open(path, "wb") as fh:
         fh.write(data)
 
@@ -155,23 +172,140 @@ def _read_raw(path: str) -> bytes:
         return fh.read()
 
 
+def _replace(src: str, dst: str) -> None:
+    """原子替换的提交点（单测可替换以注入「提交阶段失败」）。"""
+    os.replace(src, dst)
+
+
+def _atomic_write(path: str, data: bytes) -> None:
+    """同目录临时文件 + 原子替换。
+
+    目标文件在成功替换之前**始终未被打开**，因此单条写入失败不会产生半截目标文件
+    （这是 R2-N1 的根因修复）。临时文件与目标同目录 ⇒ 同卷 ⇒ Windows 上 `os.replace`
+    为原子替换。不承诺断电 / 强杀下的持久性（已在模块 docstring 声明边界）。
+    """
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    fd, tmp = tempfile.mkstemp(prefix=".vb-w-", suffix=".tmp", dir=directory)
+    os.close(fd)
+    committed = False
+    try:
+        _write_raw(tmp, data)
+        try:                       # 尽力刷盘；失败不影响"单条写入不产生半截目标"这一性质
+            with open(tmp, "rb+") as fh:
+                os.fsync(fh.fileno())
+        except OSError:
+            pass
+        _replace(tmp, path)
+        committed = True
+    finally:
+        if not committed:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+
+def _is_reparse_point(path: str) -> bool:
+    """符号链接 / Junction / 其他重解析点。"""
+    try:
+        if os.path.islink(path):
+            return True
+    except OSError:
+        pass
+    isj = getattr(os.path, "isjunction", None)
+    if isj is not None:
+        try:
+            if isj(path):
+                return True
+        except OSError:
+            pass
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return bool(getattr(st, "st_file_attributes", 0) & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _inside(path_real: str, root_real: str) -> bool:
+    return path_real == root_real or path_real.startswith(root_real + os.sep)
+
+
+def _describe(path: str) -> str:
+    """实际残留状态（让 ResidualRisk 报告落在字节数而不是形容词上）。"""
+    try:
+        if not os.path.exists(path):
+            return "不存在"
+        if os.path.isdir(path):
+            return "目录（未改动）"
+        data = _read_raw(path)
+        return "%d 字节 sha256=%s" % (len(data), hashlib.sha256(data).hexdigest()[:16])
+    except OSError as exc:
+        return "不可读(%s)" % exc
+
+
+class BoundaryError(RuntimeError):
+    """目标真实位置越出项目边界，或预检后真实位置被改变（疑似符号链接 / Junction 替换）。"""
+
+
 class WriteJournal:
     """记录本次运行的文件写入，异常时按逆序回滚。
 
-    回滚边界（如实声明）：
-    - 只回滚**本进程**创建或修改、且**当前内容仍等于本进程写入值**的文件；
-      若发现内容已被其他进程改动，则保留现状并标注 skipped-modified（不覆盖他人改动）。
-    - 只删除**本进程新建且回滚时为空**的目录。
-    - `SIGKILL` / 断电等无法捕获的终止不在覆盖范围（不做跨文件原子提交）。
+    契约（R2-N1 / R2-N2 修复后）：
+    - **先登记后写**：写入前先把条目（含原始字节）落入 `entries`，所以"写了一半"的文件
+      也在回滚范围内，不会被漏掉。
+    - **单条原子**：内容先写同目录临时文件，再 `os.replace`；失败时目标文件未被改动。
+    - **归属判据**：只回滚"当前内容仍等于本进程写入值"的文件；内容已被他人改动则跳过并报告，
+      绝不覆盖他人改动。
+    - **边界复核**：每次写入 / 删除 / 回滚前重新核对真实位置；越界或已被替换则拒绝，
+      不跟随被替换的路径去动项目外数据。
+    - **残留如实报告**：无法还原时记入 `residuals`，上层据此禁止打印"已全部回滚"。
+    - **不承诺**：SIGKILL / 断电 / 文件系统自身非原子行为下的绝对原子性。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, root: str | None = None, baseline: dict[str, str] | None = None) -> None:
         self.entries: list[dict] = []
         self.created_dirs: list[str] = []
+        self.residuals: list[dict] = []
         self.step = "初始化"
+        self.root_abs = os.path.abspath(root) if root else None
+        self.root_real = os.path.realpath(root) if root else None
+        self.baseline = {os.path.abspath(k): v for k, v in (baseline or {}).items()}
 
+    # ---------------------------------------------------------- 边界守卫
+    def guard(self, path: str) -> None:
+        """写入 / 删除前的实时边界复核（R2-N2）。不通过即抛 BoundaryError。"""
+        if not self.root_abs:
+            return
+        abs_p = os.path.abspath(path)
+        real_p = os.path.realpath(abs_p)
+        if not _inside(real_p, self.root_real):
+            raise BoundaryError(
+                "目标越出项目边界（真实位置 %s 不在 %s 内）" % (real_p, self.root_real))
+        prev = self.baseline.get(abs_p)
+        if prev is not None and prev != real_p:
+            raise BoundaryError(
+                "预检后目标真实位置发生变化（预检 %s → 现在 %s），疑似被替换" % (prev, real_p))
+        rel = os.path.relpath(abs_p, self.root_abs)
+        if rel.startswith(".."):
+            raise BoundaryError("目标不在项目目录内: %s" % abs_p)
+        cur = self.root_abs
+        for part in rel.split(os.sep)[:-1]:
+            cur = os.path.join(cur, part)
+            if not os.path.exists(cur):
+                continue
+            if _is_reparse_point(cur):
+                sub_real = os.path.realpath(cur)
+                if not _inside(sub_real, self.root_real):
+                    raise BoundaryError(
+                        "父路径 %s 是重解析点且指向项目外（%s）" % (cur, sub_real))
+
+    # ---------------------------------------------------------- 目录
     def mkdir(self, path: str) -> None:
         """递归创建目录，并记录本进程新建的层级（用于回滚时清理）。"""
+        self.guard(path)
         if os.path.isdir(path):
             return
         missing = []
@@ -185,53 +319,99 @@ class WriteJournal:
         os.makedirs(path, exist_ok=True)
         self.created_dirs.extend(missing)
 
+    # ---------------------------------------------------------- 写入
     def write(self, path: str, data: bytes, step: str = "") -> None:
+        self.guard(path)
         existed = os.path.exists(path)
-        original = _read_raw(path) if existed else None
-        try:
-            _write_raw(path, data)
-        except Exception:
-            # 本条写入自身失败：就地自愈（恢复原内容 / 删除半成品），再交给上层统一回滚
+        original = None
+        if existed:
             try:
-                if existed:
-                    _write_raw(path, original)
-                elif os.path.exists(path):
-                    os.remove(path)
-            except OSError:
-                pass
+                original = _read_raw(path)
+            except OSError as exc:
+                raise OSError(
+                    "无法读取目标文件，拒绝在缺少恢复记录的情况下写入: %s (%s)" % (path, exc))
+        entry = {"path": path, "existed": existed, "original": original,
+                 "written": data, "step": step or self.step, "state": "pending"}
+        self.entries.append(entry)      # 先登记意图：此后任何失败都在回滚范围内（R2-N1）
+        try:
+            _atomic_write(path, data)
+            entry["state"] = "written"
+        except BaseException as exc:
+            self._compensate(entry, exc)
             raise
-        self.entries.append({
-            "path": path, "existed": existed, "original": original,
-            "written": data, "step": step or self.step,
-        })
 
+    def _compensate(self, entry: dict, exc: BaseException) -> None:
+        """单条写入失败后就地收敛：能还原就还原，不能就如实登记残留。"""
+        path = entry["path"]
+        try:
+            now = _read_raw(path) if os.path.exists(path) else None
+        except OSError:
+            now = "<unreadable>"
+        if now == entry["original"]:
+            entry["state"] = "aborted"          # 目标未被改动（原子写失败时的常态）
+            return
+        try:
+            if entry["existed"]:
+                _atomic_write(path, entry["original"])
+                entry["state"] = "restored_after_failure"
+            else:
+                os.remove(path)
+                entry["state"] = "removed_after_failure"
+        except OSError as exc2:
+            entry["state"] = "residual"
+            self.residuals.append({
+                "path": path,
+                "reason": "写入失败后自动还原也失败：%s（原始失败 %s: %s）"
+                          % (exc2, type(exc).__name__, exc),
+                "actual": _describe(path),
+            })
+
+    # ---------------------------------------------------------- 回滚
     def rollback(self) -> list[str]:
         actions: list[str] = []
         for e in reversed(self.entries):
             path = e["path"]
             try:
+                self.guard(path)
+            except BoundaryError as exc:
+                actions.append("Skipped(out-of-boundary) %s (%s)" % (path, exc))
+                continue
+            try:
                 cur = _read_raw(path) if os.path.exists(path) else None
-            except OSError as exc:  # 读不回就不动它
+            except OSError as exc:          # 读不回就不动它
                 actions.append("Skipped(unreadable) %s (%s)" % (path, exc))
                 continue
-            if cur == e["written"]:
-                try:
-                    if e["existed"]:
-                        _write_raw(path, e["original"])
-                        actions.append("Restored %s" % path)
-                    else:
-                        os.remove(path)
-                        actions.append("Removed %s" % path)
-                except OSError as exc:
-                    actions.append("Failed %s (%s)" % (path, exc))
-            else:
+            if cur == e["original"]:
+                actions.append("Unchanged %s" % path)      # 本来就没改动（含写入已中止）
+                continue
+            if cur != e["written"]:
                 actions.append("Skipped(modified-by-others) %s" % path)
+                continue
+            try:
+                if e["existed"]:
+                    _atomic_write(path, e["original"])
+                    actions.append("Restored %s" % path)
+                else:
+                    os.remove(path)
+                    actions.append("Removed %s" % path)
+            except OSError as exc:
+                actions.append("Failed %s (%s)" % (path, exc))
+                self.residuals.append({
+                    "path": path,
+                    "reason": "回滚失败：%s" % exc,
+                    "actual": _describe(path),
+                })
         for d in reversed(self.created_dirs):
+            try:
+                self.guard(d)
+            except BoundaryError as exc:
+                actions.append("Skipped(out-of-boundary) %s (%s)" % (d, exc))
+                continue
             try:
                 os.rmdir(d)
                 actions.append("RemovedDir %s" % d)
             except OSError:
-                pass  # 非空或已不存在：保留
+                pass                       # 非空或已不存在：保留
         return actions
 
 
@@ -287,6 +467,57 @@ def find_standard(project: str, explicit: str | None) -> tuple[str | None, str]:
         if path and os.path.isfile(os.path.join(path, "tools", "verify_manifest.py")):
             return os.path.abspath(path), source
     return None, "未找到（检查 --standard / VB_STANDARD_HOME / vendor 目录）"
+
+
+def verify_vendor_access(standard: str) -> list[str]:
+    """校验权威 vendor 的实际路径、文件存在性与可读性（F-2）。
+
+    返回问题列表；非空即视为「接入缺失」——拒绝初始化，而不是写一个指向空路径的注入块。
+    """
+    problems: list[str] = []
+    if not os.path.isdir(standard):
+        return ["vendor 路径不是目录: %s" % standard]
+    doc = os.path.join(standard, "AI_PROJECT_STANDARD.md")
+    if not os.path.isfile(doc):
+        problems.append("缺少规范正文 AI_PROJECT_STANDARD.md: %s" % doc)
+    else:
+        try:
+            with open(doc, "rb") as fh:
+                head = fh.read(1)
+            if not head:
+                problems.append("规范正文为空文件: %s" % doc)
+        except OSError as exc:
+            problems.append("规范正文不可读: %s (%s)" % (doc, exc))
+    if not os.path.isfile(os.path.join(standard, "MANIFEST.sha256")):
+        problems.append("缺少 MANIFEST.sha256（无法证明与签收版本一致）: %s" % standard)
+    if not os.path.isfile(os.path.join(standard, "tools", "verify_manifest.py")):
+        problems.append("缺少 tools/verify_manifest.py（无法自校验）: %s" % standard)
+    return problems
+
+
+def vendor_reference(project: str, standard: str) -> dict:
+    """把已定位的 vendor 转成「可写进项目文件 + 可被 Agent 解析」的引用（F-2）。
+
+    - 在项目内 → 写项目相对路径（随项目整体移动仍有效）。
+    - 在项目外 → 写绝对路径，并如实标注其与本机安装位置绑定、换机器或移动技能后失效。
+    **不复制整份规范进项目**（只引用，不产生第二份规则副本）。
+    """
+    root = os.path.realpath(project)
+    real = os.path.realpath(standard)
+    if _inside(real, root):
+        rel = os.path.relpath(real, root).replace("\\", "/")
+        return {
+            "path": rel,
+            "kind": "project_relative",
+            "inside_project": True,
+            "condition": "项目内相对路径，随项目整体移动仍有效；技能被卸载则该路径消失",
+        }
+    return {
+        "path": os.path.abspath(standard).replace("\\", "/"),
+        "kind": "absolute_external",
+        "inside_project": False,
+        "condition": "项目外绝对路径，与本机技能安装位置绑定；换机器或移动技能后失效，需重新 --apply 重定位",
+    }
 
 
 def verify_standard(standard: str, python_exe: str) -> tuple[int, list[str]]:
@@ -376,6 +607,19 @@ def write_if_changed(path: str, content: bytes, journal: WriteJournal | None = N
     return "created"
 
 
+def print_residuals(residuals: list[dict]) -> bool:
+    """打印残留风险；返回是否存在残留（存在时上层禁止宣称"已全部回滚"）。"""
+    if not residuals:
+        return False
+    print("--- 残留风险（ResidualRisk）---")
+    for r in residuals:
+        print("  ResidualRisk %s" % r["path"])
+        print("      原因     : %s" % r["reason"])
+        print("      实际残留 : %s" % r["actual"])
+    print("  说明: 上述路径未能还原为写入前状态，请人工核对后再使用该项目。")
+    return True
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Vibecoding Skill 受保护初始化（默认 dry-run）")
     ap.add_argument("--project", default=".", help="目标项目目录（默认当前目录）")
@@ -397,9 +641,21 @@ def main(argv: list[str]) -> int:
 
     standard, source = find_standard(project, args.standard)
     if not standard:
-        print("REFUSED: 未找到标准副本。%s" % source)
+        print("REFUSED: 未找到标准副本（接入缺失）。%s" % source)
+        print("  接入缺失的含义：本技能不带第二份规范副本，规范正文必须来自已安装技能的 vendor。")
+        print("  处置：重新安装技能（或安装到项目内 <项目>/.claude/skills/vibecoding），再执行一次 --apply。")
         return 1
     result["standard"] = {"path": standard, "source": source}
+
+    access = verify_vendor_access(standard)
+    if access:
+        print("REFUSED: 规范接入缺失（未写入任何文件）。")
+        for p in access:
+            print("  - " + p)
+        print("  不写指向空路径的注入块：那会让后续会话误以为规范已加载。")
+        return 1
+    vref = vendor_reference(project, standard)
+    result["standard"]["vendor_ref"] = vref
 
     if not args.skip_standard_check:
         rc, tail = verify_standard(standard, args.python)
@@ -417,7 +673,8 @@ def main(argv: list[str]) -> int:
     state = git_state(project)
     result["git"] = {k: state[k] for k in ("is_repo", "root", "head", "branch", "dirty")}
 
-    desired_block = BLOCK.format(sv=SKILL_VERSION, std=STANDARD_VERSION)
+    desired_block = BLOCK.format(sv=SKILL_VERSION, std=STANDARD_VERSION,
+                                 vendor_path=vref["path"], vendor_condition=vref["condition"])
     plan = plan_agents(project, desired_block)
 
     touch_tracked = plan["status"] in ("appended", "differs") or (plan["status"] == "created" and state["is_repo"])
@@ -426,7 +683,14 @@ def main(argv: list[str]) -> int:
         print(state["porcelain"] or "(status 为空但 dirty 判定为真)")
         return 1
 
-    journal = WriteJournal()
+    # 预检前的真实位置基线：写入时若与它不一致 ⇒ 目标在预检后被替换（R2-N2）
+    baseline: dict[str, str] = {}
+    for _rel in ("", ".vibecoding", ".vibecoding/evidence", "AGENTS.md"):
+        _p = os.path.join(project, _rel) if _rel else project
+        if os.path.exists(_p):
+            baseline[os.path.abspath(_p)] = os.path.realpath(_p)
+
+    journal = WriteJournal(root=project, baseline=baseline)
     state_cfg = "would_write"
     state_block = "would_write"
     state_ev = "would_write"
@@ -447,11 +711,9 @@ def main(argv: list[str]) -> int:
                 print("  - " + p)
             return 1
 
-        # 跨盘符（Windows 不同 mount）无法相对化：退化为绝对路径，避免 ValueError 崩溃
-        try:
-            vendor_rel = os.path.relpath(standard, project).replace("\\", "/")
-        except ValueError:
-            vendor_rel = os.path.abspath(standard).replace("\\", "/")
+        # 规范位置：项目内用相对路径（随项目移动有效），项目外用绝对路径（并已标注失效条件）。
+        # 不再使用 os.path.relpath 生成"越出项目"的 ../../ 相对路径（R2 的 F-2 事实之一）。
+        vendor_rel = vref["path"]
 
         manifest = {
             "skill_version": SKILL_VERSION,
@@ -528,16 +790,35 @@ def main(argv: list[str]) -> int:
             # 6) 最后才动用户的 tracked 文件，缩短"已改用户文件"的时间窗
             journal.step = "AGENTS.md"
             plan["action"] = apply_agents(plan, desired_block, args.update_block, project, journal)
+        except BoundaryError as exc:      # R2-N2：越界或目标被替换，停止初始化
+            actions = journal.rollback()
+            print("REFUSED: 检测到越界写入风险，已停止初始化（未继续其余步骤）。")
+            print("  原因     : %s" % exc)
+            print("  说明     : 预检与写入之间目标真实位置发生变化，可能是符号链接 / Junction / 其他重解析点。")
+            print("             这不能证明操作恶意，但无法保证写入落在项目内，故拒绝继续。")
+            print("--- 回滚动作 ---")
+            for a in actions:
+                print("  " + a)
+            print_residuals(journal.residuals)
+            print("== 结论: REFUSED（边界风险，退出码 1）==")
+            return 1
         except Exception as exc:  # 可控异常：回滚本次写入，不删除用户原有文件
             actions = journal.rollback()
-            print("ERROR: 初始化失败，已按逆序回滚本次写入。")
+            has_residual = bool(journal.residuals)
+            # 有残留时不得用完成式措辞，只能说"已尝试"（R2-N1 第 5 条）
+            print("ERROR: 初始化失败，%s。" % (
+                "已尝试按逆序回滚本次写入（存在未还原项）" if has_residual
+                else "已按逆序回滚本次写入"))
             print("  失败步骤 : %s" % journal.step)
             print("  异常类型 : %s" % type(exc).__name__)
             print("  异常信息 : %s" % exc)
             print("--- 回滚动作 ---")
             for a in actions:
                 print("  " + a)
-            print("== 结论: FAILED（已回滚，退出码 1）==")
+            if print_residuals(journal.residuals):
+                print("== 结论: FAILED（回滚不完整，存在残留，退出码 1）==")
+            else:
+                print("== 结论: FAILED（已回滚，退出码 1）==")
             return 1
 
         result["steps"].append(plan)
@@ -554,7 +835,15 @@ def main(argv: list[str]) -> int:
             "解法一：Project instructions 设为 claude-md-and-agents-md。",
             "解法二：在 CLAUDE.md 首行加入 @AGENTS.md。",
         ]
-    result["rc"] = 2 if plan["status"] == "differs" else 0
+    # 退出码反映**操作完成后**的真实状态（F-5）：
+    # - 块 differs 且未获 --update-block 授权 → 仍有待决事项 → 2
+    # - 块已按授权更新（block_updated）→ 待决事项已消解 → 0
+    # - 其他未解决问题（拒绝/异常）在上面各分支已返回非零，不会走到这里
+    action = plan.get("action", "")
+    needs_decision = (plan["status"] == "differs") and (action != "block_updated")
+    result["rc"] = 2 if needs_decision else 0
+    result["needs_decision"] = needs_decision
+    result["block_updated"] = (action == "block_updated")
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -563,6 +852,7 @@ def main(argv: list[str]) -> int:
         print("项目      : %s" % project)
         print("标准来源  : %s" % source)
         print("标准副本  : %s" % standard)
+        print("规范定位  : %s（%s）" % (vref["path"], vref["condition"]))
         print("标准校验  : rc=%s %s" % (result["standard"]["verify_rc"], "PASS" if result["standard"]["verify_rc"] == 0 else "见下"))
         for line in result["standard"]["verify_tail"]:
             print("            " + line)
@@ -574,7 +864,13 @@ def main(argv: list[str]) -> int:
             print("--- 需人工处理 ---")
             for line in result["manual_required"]:
                 print("  " + line)
-        print("== 结论: %s ==" % ("NEED_DECISION（标记块 differs）" if result["rc"] == 2 else "OK"))
+        if result["rc"] == 2:
+            verdict = "NEED_DECISION（标记块 differs，未获 --update-block 授权）"
+        elif result["block_updated"]:
+            verdict = "OK（标记块已更新）"
+        else:
+            verdict = "OK"
+        print("== 结论: %s ==" % verdict)
     return result["rc"]
 
 

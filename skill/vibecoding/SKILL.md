@@ -86,7 +86,8 @@ grep -n "第 8 节\|DoD\|证据" vendor/vibecoding-standard/AI_PROJECT_STANDARD.
 
 ## 三层自动应用（本技能的定位）
 
-1. **项目入口**（跨会话、跨 Agent 的最低纪律）＝ `.vibecoding/AGENTS.block.md` 注入到 `AGENTS.md` 的标记块。不装技能也生效，前提是 Agent 读 `AGENTS.md`。
+1. **项目入口**（跨会话、跨 Agent 的最低纪律）＝ `.vibecoding/AGENTS.block.md` 注入到 `AGENTS.md` 的标记块。生效前提有两个：Agent 读 `AGENTS.md`，**且规范正文仍可被定位**——块里写明以 `.vibecoding/config.json` 的 `standard_vendor_path` 为准，并给出本次初始化解算出的实际路径。
+   ⚠ **不能据此宣称"不安装技能也能使用完整规范"**：规范正文由**已安装技能的 vendor 副本**提供，项目内只有指针。技能被卸载或项目被移动后，这一层只能如实告知"规范位置未知"，此时必须重装技能并重跑 `vb_init --apply` 重定位。
 2. **Agent Skill**（按任务自动激活的流程）＝ 本 `SKILL.md` ＋ `references/`。是否激活取决于宿主是否实现按 description 匹配，**不保证**。
 3. **确定性工具**（不依赖模型判断）＝ `scripts/*.py`。这是唯一能真正阻止假 PASS 的一层；CI / pre-commit 里直接调 `vb_gate.py` 比指望模型自觉更可靠。
 

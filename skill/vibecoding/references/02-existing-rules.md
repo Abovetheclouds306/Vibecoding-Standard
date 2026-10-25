@@ -45,7 +45,8 @@ Claude Code 由「Project instructions」设置决定读取哪些文件，**默�
 <!-- vibecoding:begin v0.1.0 standard=1.2.7 -->
 ## 工程纪律（Vibecoding v1.2.7）
 
-- 唯一规则真值源：`.vibecoding/vendor` 或标准仓库；本文件只做入口。
+- 唯一规则真值源：规范正文，位置见 `.vibecoding/config.json` 的 `standard_vendor_path`；本文件只做入口。
+- 该路径不可读＝技能已卸载或项目已移动：不得假装规范已加载，重装后重跑 `vb_init --apply` 重定位。
 - 验证结论必须带命令与实际退出码；`0=PASS / 1=FAIL / 2=UNKNOWN`，`2` 不得当通过。
 - 未运行的验证写 `NOT_RUN`，禁止写成 PASS。
 - 会话中断前更新 `.vibecoding/HANDOFF.md`；新会话先读它。
