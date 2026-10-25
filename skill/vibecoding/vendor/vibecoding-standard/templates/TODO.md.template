@@ -1,0 +1,26 @@
+# 任务表
+
+本文件是任务状态唯一来源；已有 Task Board 时改为链接索引。
+
+## TASK-001 — <标题>
+- Status: BACKLOG
+- Priority: <P0/P1/P2/P3，填写项目定义>
+- Owner: <待分配>
+- Goal: <可判断的目标>
+- Depends On: <任务 ID 或无>
+- Allowed Paths: <路径>
+- Spec: <路径与验收 ID，或以下内联验收>
+- Acceptance: <可观察的结果>
+- Validation: <工作目录、命令或人工步骤>
+- Evidence: <路径，执行后填写>
+- Blocker: <原因、解除条件、恢复状态或无>
+- Review: <审查者、结果与日期>
+
+- Baseline / Workspace: <版本、分支或 worktree>
+- Deliverable: <代码 / 提交 / 合并 / 发布，以验收范围为准>
+- Open Questions: <待决问题、影响或无>
+- Scope Changes: <日期、来源、变更和受影响验收或无>
+- Cancellation: <仅取消时填原因与替代任务>
+
+状态：BACKLOG / READY / IN_PROGRESS / REVIEW / BLOCKED / DONE / CANCELLED。
+READY 前明确目标、范围、依赖与验证。已有系统采用原生状态映射。

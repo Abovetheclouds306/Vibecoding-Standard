@@ -1,0 +1,17 @@
+@AGENTS.md
+
+# Claude Code 项目入口（轻量适配）
+
+**先读取本仓库根目录的 `AGENTS.md`，并遵守修改路径内的局部 AGENTS 规则。** 这是本项目跨 Agent 的统一规则入口，不要根据本文件创建另一套业务规则、任务或验收。
+
+> 首行的 `@AGENTS.md` 是 Claude Code 的显式导入语法（用 `/context` 的 **Memory files** 列表可验证实际加载结果）；下方自然语言说明仅供其他 Agent 参照，**不要删除首行导入**。
+>
+> ⚠ **为什么首行不能删**：Claude Code 默认**只在工作目录及其上方各层都没有 `CLAUDE.md` 类文件时**才读取 `AGENTS.md`。本文件一旦存在而又没有首行导入，`AGENTS.md` 就不会被读取 —— **静默失效且不报错**。
+>
+> 若希望两者同时生效而不依赖导入：把「Project instructions」设为 `claude-md-and-agents-md`。完整机制、证据分级与验证方法见 **`AGENTS.md` 所登记的通用规范目录**下的 `agents/Claude-Code.md`（不是默认相对于本业务仓库的 `agents/`）。
+
+阅读 AGENTS 所指向的规范（如 `F:\DOSS_Project\Vibecoding规范\AI_PROJECT_STANDARD.md`）、Spec、架构、任务板、验证命令与交接约定。不存在的路径或尚未明确的规则应如实报告，不要推测。
+
+实际执行时遵守 `AGENTS.md` 的允许路径、审批和证据要求。无法执行的必要验证写 `NOT_RUN`，真实失败写 `FAIL`；未完成必要验收不得将任务标记 `DONE`。
+
+> 使用方法：只在使用 Claude Code 的项目中创建项目根目录 `CLAUDE.md`。已有 CLAUDE.md 时先合并，不覆盖。上面的本地路径仅是示例；以仓库 AGENTS.md 中登记的实际规范路径为准。

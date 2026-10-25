@@ -1,0 +1,14 @@
+# 接口与组件契约
+
+权威定义：<OpenAPI、类型、Schema 或本文件>。避免重复维护同一契约。
+
+## <接口 / 组件名称>
+Purpose: <职责>
+Inputs: <字段、类型、约束>
+Outputs: <结构>
+Events: <事件或不适用>
+Errors: <错误与调用方处理>
+State / Lifecycle: <状态与生命周期>
+Compatibility: <兼容与版本约定>
+Examples: <调用示例>
+Tests: <契约测试路径>
