@@ -773,6 +773,217 @@ class TestN2Boundary(Base):
                              "回滚不得删除或覆盖项目外数据")
 
 
+class TestN1CompensateBoundary(Base):
+    """R3-N1：`_compensate()` 在还原 / 删除之前必须复核路径边界。
+
+    注入点选在 `_replace`（原子替换的提交点），**不是** `_write_raw`：
+    写入改为「同目录临时文件 + os.replace」之后，`_write_raw` 只见到临时文件，
+    在那里注入根本碰不到目标文件，用例会退化成「从未改动所以当然一致」的假通过。
+    每条用例都断言注入确实命中真实执行路径（`fired`）且 Junction 确实挂上（`swap`），
+    未命中即判用例无效 —— **「没触发」不等于「安全」**。
+    """
+
+    OUTSIDE = b">>> IMPORTANT USER DATA OUTSIDE <<<\n"
+
+    # ------------------------------------------------------------ 工具
+    def ext_dir(self):
+        p = os.path.join(self.tmp, "outside")
+        os.makedirs(p, exist_ok=True)
+        return p
+
+    def injector(self, basename, swap_of=None, outside=None):
+        """提交点之后制造失败；`swap_of(dst)` 给出要被换掉的目录（None 表示不换）。"""
+        real = vb_init._replace
+        st = {"fired": False, "swap": False, "swap_requested": swap_of is not None}
+
+        def inject(src, dst):
+            real(src, dst)
+            if os.path.basename(dst) == basename and not st["fired"]:
+                st["fired"] = True
+                if swap_of is not None:
+                    d = swap_of(dst)
+                    os.rename(d, d + ".aside")      # 原目录整体搬到一边
+                    st["swap"] = junction(d, outside)
+                raise OSError(28, "No space left on device（提交点注入）")
+            return None
+
+        return inject, st
+
+    def assert_injected(self, st):
+        self.assertTrue(st["fired"], "注入未命中真实执行路径，用例无效")
+        if st.get("swap_requested"):
+            self.assertTrue(st["swap"], "Junction 未创建，用例无效")
+
+    def write_outside(self, ext, name, data=None):
+        p = os.path.join(ext, name)
+        with open(p, "wb") as fh:
+            fh.write(self.OUTSIDE if data is None else data)
+        return p
+
+    # ------------------------------------------------------------ 覆盖
+    def test_compensate_does_not_overwrite_outside_file(self):
+        """项目内 config.json 原有内容，补偿写回不得覆盖项目外同名用户数据。"""
+        ext = self.ext_dir()
+        cfg_dir = os.path.join(self.proj, ".vibecoding")
+        os.makedirs(cfg_dir)
+        with open(os.path.join(cfg_dir, "config.json"), "wb") as fh:
+            fh.write(b'{"old": true}\n')           # existed=True ⇒ 补偿走"写回原内容"
+        self.write("AGENTS.md", "# orig\n")
+        ext_file = self.write_outside(ext, "config.json")
+
+        inject, st = self.injector("config.json", lambda dst: cfg_dir, ext)
+        try:
+            with mock.patch.object(vb_init, "_replace", inject):
+                rc, out = self.init("--apply")
+        finally:
+            rmdir_link(cfg_dir)
+        self.assert_injected(st)
+        self.assertEqual(rc, 1, out)
+        with open(ext_file, "rb") as fh:
+            self.assertEqual(fh.read(), self.OUTSIDE,
+                             "补偿写回不得覆盖项目外同名文件")
+        self.assertIn("ResidualRisk", out)
+        self.assertIn("Skipped(out-of-boundary)", out)
+
+    # ------------------------------------------------------------ 删除
+    def test_compensate_does_not_delete_outside_file(self):
+        """项目内 HANDOFF.md 原本不存在，补偿撤销新建不得删掉项目外同名文件。"""
+        ext = self.ext_dir()
+        self.write("AGENTS.md", "# orig\n")
+        ext_file = self.write_outside(ext, "HANDOFF.md")
+
+        inject, st = self.injector("HANDOFF.md", lambda dst: os.path.dirname(dst), ext)
+        link = os.path.join(self.proj, ".vibecoding")
+        try:
+            with mock.patch.object(vb_init, "_replace", inject):
+                rc, out = self.init("--apply")
+        finally:
+            rmdir_link(link)
+        self.assert_injected(st)
+        self.assertEqual(rc, 1, out)
+        self.assertTrue(os.path.exists(ext_file), "补偿删除不得删掉项目外同名文件")
+        with open(ext_file, "rb") as fh:
+            self.assertEqual(fh.read(), self.OUTSIDE, "项目外同名文件内容不得被改写")
+        self.assertIn("ResidualRisk", out)
+
+    # ------------------------------------------------------------ 子目录
+    def test_compensate_blocks_nested_junction(self):
+        """被替换的是 `.vibecoding/evidence` 这类子目录时，同样要拦住。"""
+        ext = self.ext_dir()
+        self.write("AGENTS.md", "# orig\n")
+        ext_file = self.write_outside(ext, "_template.md")
+
+        inject, st = self.injector("_template.md", lambda dst: os.path.dirname(dst), ext)
+        outer = os.path.join(self.proj, ".vibecoding")
+        inner = os.path.join(outer, "evidence")
+        try:
+            with mock.patch.object(vb_init, "_replace", inject):
+                rc, out = self.init("--apply")
+        finally:
+            rmdir_link(inner)
+            rmdir_link(outer)
+        self.assert_injected(st)
+        self.assertEqual(rc, 1, out)
+        self.assertTrue(os.path.exists(ext_file), "子目录情形下项目外文件同样不得被删除")
+        with open(ext_file, "rb") as fh:
+            self.assertEqual(fh.read(), self.OUTSIDE)
+        self.assertIn("ResidualRisk", out)
+
+    # ------------------------------------------------------------ 报告
+    def test_residual_report_names_path_and_reason(self):
+        """无法完成补偿时必须点名路径、原因与实际状态，并禁止宣称已完全回滚。"""
+        ext = self.ext_dir()
+        cfg_dir = os.path.join(self.proj, ".vibecoding")
+        os.makedirs(cfg_dir)
+        with open(os.path.join(cfg_dir, "config.json"), "wb") as fh:
+            fh.write(b'{"old": true}\n')
+        self.write("AGENTS.md", "# orig\n")
+        self.write_outside(ext, "config.json")
+
+        inject, st = self.injector("config.json", lambda dst: cfg_dir, ext)
+        try:
+            with mock.patch.object(vb_init, "_replace", inject):
+                rc, out = self.init("--apply")
+        finally:
+            rmdir_link(cfg_dir)
+        self.assert_injected(st)
+        self.assertIn("残留风险（ResidualRisk）", out)
+        self.assertIn("原因", out)
+        self.assertIn("实际残留", out)
+        self.assertIn("请人工核对", out)
+        self.assertIn("回滚不完整", out)
+        # 关键：不得出现"完全恢复成功"的完成式措辞
+        self.assertNotIn("已按逆序回滚本次写入", out,
+                         "存在未还原项时不得宣称已按逆序回滚")
+
+    # ------------------------------------------------------------ 挡住即不改
+    def test_guard_failure_stops_compensation_before_mutation(self):
+        """边界校验失败时必须在**改动目标之前**停手：文件保持失败时的状态。"""
+        self.write("AGENTS.md", "# orig\n")
+        agents = os.path.join(self.proj, "AGENTS.md")
+        with open(agents, "rb") as fh:
+            before = fh.read()
+
+        calls = {"n": 0, "agents": 0}
+        real_guard = vb_init.WriteJournal.guard
+
+        def guarded(self, path):
+            calls["n"] += 1
+            if os.path.basename(path) == "AGENTS.md":
+                calls["agents"] += 1
+                # 第 1 次是首次写入前的复核（必须放行，否则走不到补偿路径）；
+                # 第 2 次起是补偿还原前的复核 —— 这才是本次要拦的那一次。
+                if calls["agents"] >= 2:
+                    raise vb_init.BoundaryError("注入：边界校验失败")
+            return real_guard(self, path)
+
+        inject, st = self.injector("AGENTS.md")          # 不换目录，只让 guard 失败
+        with mock.patch.object(vb_init.WriteJournal, "guard", guarded):
+            with mock.patch.object(vb_init, "_replace", inject):
+                rc, out = self.init("--apply")
+        self.assert_injected(st)
+        self.assertEqual(rc, 1, out)
+        # 补偿阶段被 guard 拦住 ⇒ 不得写回原内容
+        with open(agents, "rb") as fh:
+            self.assertNotEqual(fh.read(), before,
+                                "guard 失败后仍改动了文件 ⇒ 边界校验未生效")
+        self.assertIn("ResidualRisk", out)
+        self.assertGreaterEqual(calls["agents"], 2,
+                                "补偿与回滚两处都应复核边界（实际只调用了 %d 次）"
+                                % calls["agents"])
+
+    # ------------------------------------------------------------ 不破正常路径
+    def test_normal_compensation_restore_still_works(self):
+        """不换目录时，补偿仍要把有原文件的写入还原成原字节。"""
+        self.write("AGENTS.md", "# 原\n")
+        agents = os.path.join(self.proj, "AGENTS.md")
+        with open(agents, "rb") as fh:
+            before = fh.read()
+
+        inject, st = self.injector("AGENTS.md")
+        with mock.patch.object(vb_init, "_replace", inject):
+            rc, out = self.init("--apply")
+        self.assert_injected(st)
+        self.assertEqual(rc, 1, out)
+        with open(agents, "rb") as fh:
+            self.assertEqual(fh.read(), before, "正常补偿必须还原为原字节")
+        self.assertNotIn("ResidualRisk", out)
+        self.assertIn("已按逆序回滚本次写入", out)
+
+    def test_normal_compensation_remove_still_works(self):
+        """不换目录时，补偿仍要撤销本次新建的文件。"""
+        self.write("AGENTS.md", "# 原\n")
+        handoff = os.path.join(self.proj, ".vibecoding", "HANDOFF.md")
+
+        inject, st = self.injector("HANDOFF.md")
+        with mock.patch.object(vb_init, "_replace", inject):
+            rc, out = self.init("--apply")
+        self.assert_injected(st)
+        self.assertEqual(rc, 1, out)
+        self.assertFalse(os.path.exists(handoff), "正常补偿必须撤销本次新建的文件")
+        self.assertNotIn("ResidualRisk", out)
+
+
 class TestMatrix(Base):
     """Owner 要求的矩阵补充：跨盘符、重复接入、幂等、块资产一致性。"""
 
