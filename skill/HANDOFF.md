@@ -64,11 +64,26 @@
 - 命令与退出码（Windows，Python 3.14.3）：
   | 命令 | 时点 | rc | 结果 |
   |---|---|---|---|
-  | 全套 unittest discover | 改动前 5327eb9 | 0 | 78 OK（skip 1） |
+  | 全套 unittest discover | 改动前 5327eb9 | 0 | 78 OK，skipped=1（本 worktree 在 F: 盘实测 skipped=1，仅文件符号链接；跨盘用例在 F:↔%TEMP%(C:) 下实际运行。若仓库副本与 %TEMP% 同盘，跨盘用例也 skip → skipped=2，即 R5 的结果） |
   | verify_manifest（cwd=vendor） | 改动前 | 0 | PASS 33/0/0/0 |
   | 新/收紧用例 × 5327eb9（git show 到 %TEMP%\vbr5\old5327，VB_INSTALLER_UNDER_TEST / VB_INIT_UNDER_TEST） | 判别 | 1 | 8 运行：5 FAIL + 1 ERROR（V7：decoy/config.json 经 Junction 被删），1 skip（文件符号链接），1 PASS |
   | 同上 × 新版 | 判别 | 0 | 8 运行，0 FAIL，1 skip |
-  | 全套 unittest discover | 改动后 | 0 | 83 OK（skip 1） |
+  | 全套 unittest discover | 改动后 | 0 | 83 OK，skipped=1（本 worktree 在 F: 盘实测 skipped=1，仅文件符号链接；跨盘用例在 F:↔%TEMP%(C:) 下实际运行。若仓库副本与 %TEMP% 同盘，跨盘用例也 skip → skipped=2，即 R5 的结果） |
   | verify_manifest | 改动后 | 0 | PASS 33/0/0/0 |
 - R5 复核入口：重跑 R4 的 raw\atk_installer.py I1（文件占位 scripts）与 raw\atk_init.py V6/V7（mock `_replace`），对比 5327eb9 与 HEAD；尝试：更深层文件占位、补偿与回滚之间二次替换、文件符号链接（本机 NOT_RUN）、真实 TOCTOU 竞态（NOT_RUN）。
 - 残留风险：TOCTOU 窗口仍在（检查—写入非原子）；N4..N10 仍 OPEN；文件符号链接、跨盘、Linux/macOS、user scope 仍 NOT_RUN。
+
+## 10. R6 轮（R5-N2 测试补强 + R5-N5 计数更正，开发者自测，非独立复核）
+- 提交：a1a32c8（skill/tests/test_vb_init_cli.py，新增 TestR5N2RealLocationAndRollbackResiduals 5 个用例），以及本文档提交。未改产品代码（新用例在 HEAD 上全部通过，未暴露新缺陷）。
+- 用例：回滚前把目录换成指向项目内、内容逐字节相同副本的 Junction——E1 新建 .vibecoding、E2 预先存在的 .vibecoding、E3 新建的嵌套 .vibecoding/evidence、E7 同场景 --json（status=failed、rc=1）；断言副本不变、rc=1、有 ResidualRisk、无「FAILED（已回滚」。另有回滚前他进程改写 HANDOFF（保护 modified-by-others 残留）。
+- 变异（%TEMP%\vbr6\mutate.py，替换串与 R5 raw\mutate_r5.py 相同，经 VB_INIT_UNDER_TEST 运行 test_vb_init_cli）：
+  | 变异 | 结果 | 失败的新用例 |
+  |---|---|---|
+  | M4 去掉新建目录登记 baseline | KILLED | E1、E3、E7 |
+  | M5 去掉父路径 realpath 比对 | KILLED | E1、E2、E3、E7 |
+  | M6 去掉回滚越界残留 | KILLED | E1、E2、E3、E7 |
+  | M7 去掉回滚被他人改动残留 | KILLED | modified_by_others_at_rollback |
+  HEAD：18/18 OK；5327eb9：新 5 例全部 FAIL。
+- 全套 unittest discover：rc=0，88 OK，skipped=1（本 worktree，原因见 §9 注）。verify_manifest（cwd=vendor）：rc=0，PASS 33/0/0/0。
+- R6 复核入口：范围 `git log c1ae6e3..fix/skill-ins1-cli-v0.1.1`；在独立副本上用 R5 raw\mutate_r5.py 的 M4–M7 重跑全套与 test_vb_init_cli，确认四个变异均 KILLED、HEAD 全绿；R5-N1/N3/N4 仍 OPEN 未修。
+- NOT_RUN：文件符号链接、真实 TOCTOU 竞态、跨盘（在同盘副本中）、Linux/macOS（Junction 用例在非 Windows 下 skip）、user scope。

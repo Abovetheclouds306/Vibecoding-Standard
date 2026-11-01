@@ -22,6 +22,11 @@
 | R4-N8 | c08407d 残留报告描述不准确 | OPEN | R4-N2 修复顺带让未回滚项进残留，但描述准确性未逐项复核，仍 OPEN |
 | R4-N9 | 项目位于盘符根目录时写入全被拒 | OPEN | Info |
 | R4-N10 | 测试与清单的小缺口（清单中 ../、绝对路径键被保留等） | OPEN | Info |
+| R5-N1 | 安装器：dest 本身或其上层被普通文件占据时未进预检冲突（执行阶段异常 rc1，零写入） | OPEN | 见 R5-REPORT；本轮不修 |
+| R5-N2 | R4-N2 核心机制缺测试保护 | 自测 PASS | a1a32c8；M4–M7 均 KILLED；待 R6 复核 |
+| R5-N3 | 补偿阶段残留未在回滚后核对，描述可能与事实相反（R4-N8 延伸） | OPEN | 见 R5-REPORT；本轮不修 |
+| R5-N4 | 安装器 TOCTOU：预检后出现的占位文件 | OPEN | Info；本轮不修 |
+| R5-N5 | HANDOFF §9 skip 计数不准 | 已更正 | skip 数随仓库所在盘而变：F: worktree 为 1，与 %TEMP% 同盘为 2 |
 | R4-c08407d | 对 c08407d（及本分支）的独立复核 | 已完成 R4 | R4-REPORT.md：PASS-with-findings；R5 复核 5327eb9..HEAD 待安排 |
 | VENDOR-SCOPE | vendor 范围决策（全量 vendored 还是精简） | OPEN | 需 Chris 决定 |
 | POC-PUSH | poc/vibecoding-skill-v0.1.0 与本 fix 分支均未推送远程 | OPEN | 推送需 Chris 明确批准 |
