@@ -1,6 +1,6 @@
 # AI Project Standard — Vibecoding 规范 1.2
 
-版本：1.2.7 候选｜日期：2026-10-23｜兼容 Codex、Claude Code 与其他遵守仓库入口规则的 Agent
+版本：1.2.8 候选｜日期：2026-11-02｜兼容 Codex、Claude Code 与其他遵守仓库入口规则的 Agent
 
 ## 1. 目的与适用范围
 
@@ -102,7 +102,7 @@ Claude Code 是否读取 `AGENTS.md`，由「Project instructions」设置决定
 | BLOCKED | 依赖或必要条件缺失 | 记录原因、解除条件与恢复状态 |
 | DONE | 已通过必要验收 | 后续缺陷开新任务并关联原任务 |
 
-已有任务系统（例如 DOSS_Project TaskBoard 的九态 `BACKLOG / PLAN / READY / IN_PROGRESS / EXECUTING / REVIEW / BLOCKED / ACCEPTED / DONE`）的项目，状态以其原生定义为权威，不迁移、不改名，不建立平行状态表。映射必须依据该系统的 Schema、执行契约与实际流转条件逐项核对，不得按名称相似做简单等同——同名状态语义可能不同（如仅表示“队列就绪”、不构成开工授权的 READY，或表示“验收通过并挂接提交”的 ACCEPTED）；兼容别名（如 EXECUTING）按原生含义登记。映射结果写在 `AGENTS.md` 的真值源映射中，仅用于回答“任务当前处于什么阶段、能否继续执行”。本表六态是没有既有任务系统时的通用基线。
+已有任务系统（例如某既有任务看板的九态 `BACKLOG / PLAN / READY / IN_PROGRESS / EXECUTING / REVIEW / BLOCKED / ACCEPTED / DONE`）的项目，状态以其原生定义为权威，不迁移、不改名，不建立平行状态表。映射必须依据该系统的 Schema、执行契约与实际流转条件逐项核对，不得按名称相似做简单等同——同名状态语义可能不同（如仅表示“队列就绪”、不构成开工授权的 READY，或表示“验收通过并挂接提交”的 ACCEPTED）；兼容别名（如 EXECUTING）按原生含义登记。映射结果写在 `AGENTS.md` 的真值源映射中，仅用于回答“任务当前处于什么阶段、能否继续执行”。本表六态是没有既有任务系统时的通用基线。
 
 任务状态与验证结论分开。验证结果采用 PASS / FAIL / BLOCKED / NOT_RUN；不适用项可用 N/A，但必须说明理由。禁止将 NOT_RUN 写成 PASS。
 

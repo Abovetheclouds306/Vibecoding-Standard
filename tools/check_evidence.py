@@ -11,13 +11,13 @@
 退出码：0=PASS；1=FAIL；2=UNKNOWN/NOT_CHECKED（输入不足以作出判断）。
 严重度：FAIL > UNKNOWN > PASS；同时存在两类结论时返回 1。
 
-未完成语义（契约 F-01）：
+未完成语义：
 - 行结论 NOT_RUN/BLOCKED 且原因有效：非 DONE 状态记 UNKNOWN(2)，不呈现为 PASS；
   DONE 状态由完整性检查判为 FAIL(1)。
 - 行结论 N/A 且原因有效：非必要验收可保留通过；被登记为必要验收时判 FAIL(1)。
 - 总结论 NOT_RUN/BLOCKED/N/A：DONE 状态判 FAIL(1)，其余状态记 UNKNOWN(2)。
 
-表格边界（契约 F-02/F-03）：支持 ID 列别名（验收编号/用例 ID 等），
+表格边界：支持 ID 列别名（验收编号/用例 ID 等），
 与主表无空行相邻的第二个验收表按表头+分隔行切分，检出即记 UNKNOWN。
 门禁不支持跨表聚合验证，检出额外验收表不代表已覆盖其中的记录。
 """

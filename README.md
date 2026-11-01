@@ -1,6 +1,6 @@
-# Vibecoding 规范 v1.2.7 候选
+# Vibecoding 规范 v1.2.8 候选
 
-版本：1.2.7 候选｜更新：2026-10-23｜适用：Codex / Claude Code / 其他遵守仓库入口规则的 Agent
+版本：1.2.8 候选｜更新：2026-11-02｜适用：Codex / Claude Code / 其他遵守仓库入口规则的 Agent
 
 > 一套规范、一个任务真值源、多个 Agent 共用。不安装程序，不直接修改任何业务仓库。
 
@@ -75,12 +75,12 @@
 
 本包是 **Markdown 工程规则与模板**，不是可执行插件；解压后不会自动配置 MCP、Skills 或修改任何代码仓库。
 
-1. 下载 `Vibecoding规范-v1.2.7-候选-完整整合版.zip`。
+1. 下载 `Vibecoding规范-v1.2.8-候选-完整整合版.zip`。
 2. 先备份本地已有同名目录（如有），**不要直接覆盖未提交的个人修改**。
 3. 解压到目标位置。ZIP 内含单一顶层目录 `Vibecoding规范/`：
 
 ```powershell
-Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.7-候选-完整整合版.zip" -DestinationPath 'F:\DOSS_Project'
+Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.8-候选-完整整合版.zip" -DestinationPath 'D:\work'
 ```
 
 > **不要**解压到已经命名为 `Vibecoding规范` 的文件夹中，否则会形成双层同名目录。
@@ -120,8 +120,8 @@ Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.7-候选-完�
 - `MANIFEST.sha256` 列出发布包内全部文件的 SHA-256（不含清单自身，也不含 `_archive/`、`_review_*/`、`_dist/`）。
 - 校验：`python tools/verify_manifest.py` 和 `python tools/check_links.py`；证据模板可用只读 `python tools/check_evidence.py <evidence.md> --task-id <TASK-xxx> --task-status <REVIEW|DONE|IN_PROGRESS|BLOCKED>` 检查。检查 `DONE` 时还需用任务权威来源提供必要 `--acceptance-id`，否则输出 `UNKNOWN`。省略 `--task-status` 时门禁不判 `PASS`，输出 `UNKNOWN` 并声明未执行 DONE 完整性检查；验收行或总结论为 `FAIL` 时判 `FAIL`。退出码 0=PASS、1=FAIL、2=UNKNOWN，严重度为 `FAIL` > `UNKNOWN` > `PASS`。相对证据路径以证据文件目录为基准，外部索引无法本地验证时输出 `UNKNOWN`。未完成记录不呈现为通过：验收行 `NOT_RUN`/`BLOCKED` 且原因有效时，非 `DONE` 输出 `UNKNOWN`、`DONE` 判 `FAIL`；总结论 `NOT_RUN`/`BLOCKED`/`N/A` 同理；必要验收的 `N/A` 判 `FAIL`。门禁只解析首个连续验收表，不支持跨表聚合验证，不应据此宣称已覆盖全部验收记录。识别边界固定为三档：正式验收表（六类列齐全）全量检查；缺表头分隔行、位于主表之前或列数不足的疑似验收表一律输出 `UNKNOWN` 并给出行号（不得静默忽略，静默忽略即等于假 `PASS`）；普通设计清单与代码示例不参与判定。结果列须为结果语义（`结论 / 结果 / Result / Outcome / 实际`），`预期 / 期望 / Expected / 前置` 属前瞻语义，`用例 ID｜预期结果` 不算执行结论；ID 列支持「验收 ID / 验收编号 / 用例 ID / Acceptance / Case ID」等别名，相邻第二表按表头切分且表头不得被当成数据行；围栏代码块（`` ``` `` / `~~~`）内的表格不参与扫描。额外表内出现 `FAIL` 输出 `UNKNOWN`（不做跨表聚合），但主表中可靠解析出的 `FAIL` 必须判 `FAIL`。报告门禁结论时必须区分「证据结构检查通过」「任务验收通过」与「DONE 完整性判断通过」，不得混为同一结论。重新打包：`python tools/release_zip.py build <输出 zip>`（构建前会强制验证清单与文件哈希）。
 - Windows 亦可用 `Get-FileHash -Algorithm SHA256` 校验关键文件。
-- 版本号保持在文档与 ZIP 文件名中；**不把目录重命名为 `Vibecoding规范1.2.7`**。
+- 版本号保持在文档与 ZIP 文件名中；**不把目录重命名为 `Vibecoding规范1.2.8`**。
 - 新项目可一次性采用；老项目应先试点一个任务，避免批量重构。
 - `_archive/` 是历史备份，**不要交给 Agent 当成现行规则**。最新规范始终从 `README.md` / `AI_PROJECT_STANDARD.md` 进入。
 
-> 本次发布包与空间内 `Vibecoding规范/` 文件夹的工作文件保持同一版本；`_archive/`、`_review_*/`、`_dist/` 一律不打进发布包；当前版本 ZIP 不打包自身（避免无限嵌套）。
+> 本次发布包与仓库内工作文件保持同一版本；`_archive/`、`_review_*/`、`_dist/` 一律不打进发布包；当前版本 ZIP 不打包自身（避免无限嵌套）。

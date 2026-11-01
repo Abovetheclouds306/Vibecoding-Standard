@@ -557,7 +557,7 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
 
 
-    # ---- R2 轮：假 PASS 回归与表格识别边界（Owner R2 裁定） ----
+    # ---- 假 PASS 回归与表格识别边界 ----
     _MAIN_TABLE = (
         "| 验收 ID | 命令 / 步骤 | 退出码 | 结论 | 证据路径 | 限制 |\n"
         "| --- | --- | --- | --- | --- | --- |\n"
@@ -570,7 +570,7 @@ class EvidenceGateTests(unittest.TestCase):
         return evidence_text("PASS").split("| 验收 ID")[0]
 
     def test_incomplete_extra_acceptance_table_never_passes(self) -> None:
-        # R2-F01：第二张验收表漏写 Markdown 分隔行时，旧实现把表头当数据吞掉 → 假 PASS(0)。
+        # 第二张验收表漏写 Markdown 分隔行时，旧实现把表头当数据吞掉 → 假 PASS(0)。
         content = (
             self._head() + self._MAIN_TABLE + "\n## 补充验收\n\n"
             + self._SECOND_HEADER + self._SECOND_FAIL_ROW + "\n结论：PASS\n"
@@ -614,7 +614,7 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertIn("== 证据门禁: FAIL ==", result.stdout)
 
     def test_preceding_suspected_acceptance_table_never_passes(self) -> None:
-        # R2-F03：主表之前的「验收编号 | 结论」简表同样是验收记录，不能在假 PASS 中被无视。
+        # 主表之前的「验收编号 | 结论」简表同样是验收记录，不能在假 PASS 中被无视。
         simple = "| 验收编号 | 结论 |\n| --- | --- |\n| AC-000 | FAIL |\n"
         content = self._head() + simple + "\n" + self._MAIN_TABLE + "\n结论：PASS\n"
         result = self.run_check(content, "--task-id", "TASK-001", "--task-status", "REVIEW")
@@ -630,7 +630,7 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertNotIn("主验收表之前存在", result.stdout)
 
     def test_design_tables_are_not_execution_acceptance(self) -> None:
-        # R2-F02：含「用例 ID」但只有前瞻语义列（预期/前置/步骤）的表格是设计清单，不是执行结论。
+        # 含「用例 ID」但只有前瞻语义列（预期/前置/步骤）的表格是设计清单，不是执行结论。
         design_tables = (
             "| 用例 ID | 预期结果 |\n| --- | --- |\n| TC-001 | 返回 200 |\n",
             "| 用例 ID | 前置条件 | 步骤 | 预期结果 |\n| --- | --- | --- | --- |\n| TC-001 | 已登录 | 点击 | 跳转成功 |\n",
@@ -655,7 +655,7 @@ class EvidenceGateTests(unittest.TestCase):
             self.assertNotIn("== 证据门禁: PASS ==", result.stdout)
 
     def test_fenced_tables_are_excluded_from_acceptance_scan(self) -> None:
-        # R2 契约：围栏代码块内的示例表格不是真实验收记录，不得计入执行证据扫描。
+        # 围栏代码块内的示例表格不是真实验收记录，不得计入执行证据扫描。
         table = "| 用例 ID | 结论 |\n| --- | --- |\n| AC-900 | FAIL |\n"
         for fence in ("```", "~~~"):
             fenced = self._head() + self._MAIN_TABLE + f"\n## 示例\n\n{fence}text\n" + table + f"{fence}\n\n结论：PASS\n"
@@ -669,9 +669,9 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertIn("额外验收表", result.stdout)
 
     def test_extra_acceptance_table_ruling_is_unknown(self) -> None:
-        # Owner R2 裁定（非缺陷修复）：额外验收表含 FAIL 时返回 UNKNOWN(2)，
+        # 契约裁定（非缺陷修复）：额外验收表含 FAIL 时返回 UNKNOWN(2)，
         # 因为门禁不做跨表聚合验证，无法确认该失败是否属于本任务判定范围。
-        # Reviewer 侧原期望为 FAIL(1)，Owner 裁定以 UNKNOWN(2) 为准。
+        # 曾有 FAIL(1) 的不同期望，契约以 UNKNOWN(2) 为准。
         adjacent = self._head() + self._MAIN_TABLE + self._SECOND_HEADER + self._SECOND_FAIL_ROW + "\n结论：PASS\n"
         result = self.run_check(adjacent, "--task-id", "TASK-001", "--task-status", "REVIEW")
         self.assertEqual(result.returncode, 2, result.stdout)

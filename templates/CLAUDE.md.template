@@ -10,7 +10,7 @@
 >
 > 若希望两者同时生效而不依赖导入：把「Project instructions」设为 `claude-md-and-agents-md`。完整机制、证据分级与验证方法见 **`AGENTS.md` 所登记的通用规范目录**下的 `agents/Claude-Code.md`（不是默认相对于本业务仓库的 `agents/`）。
 
-阅读 AGENTS 所指向的规范（如 `F:\DOSS_Project\Vibecoding规范\AI_PROJECT_STANDARD.md`）、Spec、架构、任务板、验证命令与交接约定。不存在的路径或尚未明确的规则应如实报告，不要推测。
+阅读 AGENTS 所指向的规范（如 `<规范路径>/AI_PROJECT_STANDARD.md`）、Spec、架构、任务板、验证命令与交接约定。不存在的路径或尚未明确的规则应如实报告，不要推测。
 
 实际执行时遵守 `AGENTS.md` 的允许路径、审批和证据要求。无法执行的必要验证写 `NOT_RUN`，真实失败写 `FAIL`；未完成必要验收不得将任务标记 `DONE`。
 

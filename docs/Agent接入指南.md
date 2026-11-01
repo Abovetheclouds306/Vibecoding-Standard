@@ -1,6 +1,6 @@
 # 将 Vibecoding 规范接入自己的 AI Agent
 
-> 适用版本：**Vibecoding Standard v1.2.7 候选**（本指南随同规范版本更新）。本文是**接入操作指南**，不是新的母规范。治理要求以 [`../AI_PROJECT_STANDARD.md`](../AI_PROJECT_STANDARD.md) 为准；Codex / Claude Code 特殊机制分别以 [`../agents/Codex.md`](../agents/Codex.md)、[`../agents/Claude-Code.md`](../agents/Claude-Code.md) 为准。
+> 适用版本：**Vibecoding Standard v1.2.8 候选**（本指南随同规范版本更新）。本文是**接入操作指南**，不是新的母规范。治理要求以 [`../AI_PROJECT_STANDARD.md`](../AI_PROJECT_STANDARD.md) 为准；Codex / Claude Code 特殊机制分别以 [`../agents/Codex.md`](../agents/Codex.md)、[`../agents/Claude-Code.md`](../agents/Claude-Code.md) 为准。
 
 ## 一、最推荐：直接把规范交给 Agent，让它帮你接入
 
@@ -9,16 +9,16 @@
 **操作步骤：**
 
 1. 在**需要接入的业务项目目录**启动 Agent，而不是在规范仓库里启动；确认它当前使用的是正确的项目和工作区。
-2. 向 Agent 发送下面这段可直接复制的提示词。Agent 能访问私有 GitHub 时提供仓库地址；没有权限时给它本地解压后的规范路径或完整 ZIP，**不要粘贴个人 Token 到聊天、提示词或代码中**。
+2. 向 Agent 发送下面这段可直接复制的提示词。Agent 能访问规范仓库时提供仓库地址；没有权限时给它本地解压后的规范路径或完整 ZIP，**不要粘贴个人 Token 到聊天、提示词或代码中**。
 3. 接入完成后查看它的修改清单和验证证据；首次选一个离线、只读或低风险的任务试运行。通过后日常直接派任务即可。
 
 ### 直接发给 Agent 的接入提示词
 
 ```text
-请在当前业务项目中接入我的统一工程规范 Vibecoding Standard v1.2.7 候选。
+请在当前业务项目中接入我的统一工程规范 Vibecoding Standard v1.2.8 候选。
 
-规范私有仓库：https://github.com/Abovetheclouds306/Vibecoding-Standard
-如果你无法访问私有仓库，请先检查我提供的本地规范目录或正式 ZIP；仍不可访问时如实报告 BLOCKED，不得猜测或伪称已读取。
+规范仓库：<规范仓库地址>
+如果你无法访问规范仓库，请先检查我提供的本地规范目录或正式 ZIP；仍不可访问时如实报告 BLOCKED，不得猜测或伪称已读取。
 
 请自主推进到完成或明确阻塞：
 1. 阅读规范 README.md、docs/Agent接入指南.md、AI_PROJECT_STANDARD.md，以及对应的 agents/ 说明。
@@ -54,26 +54,26 @@
 
 ### 方式 A：单台 Windows 电脑使用一份本地规范（个人最简单）
 
-示例位置：`F:\DOSS_Project\Vibecoding-Standard\`。在 PowerShell 中执行：
+示例位置：`D:\work\Vibecoding-Standard\`。在 PowerShell 中执行：
 
 ```powershell
-git clone https://github.com/Abovetheclouds306/Vibecoding-Standard.git F:\DOSS_Project\Vibecoding-Standard
-git -C F:\DOSS_Project\Vibecoding-Standard rev-parse HEAD
-python F:\DOSS_Project\Vibecoding-Standard\tools\verify_manifest.py
-python F:\DOSS_Project\Vibecoding-Standard\tools\check_links.py
+git clone <规范仓库地址> D:\work\Vibecoding-Standard
+git -C D:\work\Vibecoding-Standard rev-parse HEAD
+python D:\work\Vibecoding-Standard\tools\verify_manifest.py
+python D:\work\Vibecoding-Standard\tools\check_links.py
 ```
 
 - 将 `rev-parse HEAD` 输出的 **40 位 commit SHA** 记录在业务项目 `AGENTS.md` 或既有治理记录中，作为本项目采纳的规范版本身份。
-- **不要求每次任务自动 `git pull`**，避免执行中途规则变化。需要完全锁定时，将规范工作副本保持在批准的 commit：`git -C F:\DOSS_Project\Vibecoding-Standard switch --detach <批准的完整 commit SHA>`。这一命令应在确认工作区没有待保留修改后执行。
+- **不要求每次任务自动 `git pull`**，避免执行中途规则变化。需要完全锁定时，将规范工作副本保持在批准的 commit：`git -C D:\work\Vibecoding-Standard switch --detach <批准的完整 commit SHA>`。这一命令应在确认工作区没有待保留修改后执行。
 - 本方式的绝对路径只对这台电脑有效；团队成员、Git worktree、CI 或异机使用时优先选下面方式 B。
-- 私有仓库需要具有相应访问权的 GitHub 账号完成克隆。**不要把个人 Token 或凭据写入 AGENTS.md 或提交到业务仓库。**
+- 若规范仓库为私有，需要具有相应访问权的账号完成克隆。**不要把个人 Token 或凭据写入 AGENTS.md 或提交到业务仓库。**
 
 ### 方式 B：业务项目持有固定版本（团队 / 多 worktree / CI 推荐）
 
 在目标业务仓库内使用固定相对位置，例如 `.vibecoding/standard/`：
 
 ```text
-Nexus-Testing/
+my-project/
 ├── AGENTS.md
 ├── CLAUDE.md              # 使用 Claude Code 且需要时
 ├── .vibecoding/
@@ -97,8 +97,8 @@ Nexus-Testing/
 
 ```markdown
 ## 统一工程规范
-- 标准：Vibecoding Standard v1.2.7 候选。
-- 母规范：`F:\DOSS_Project\Vibecoding-Standard\AI_PROJECT_STANDARD.md`。
+- 标准：Vibecoding Standard v1.2.8 候选。
+- 母规范：`D:\work\Vibecoding-Standard\AI_PROJECT_STANDARD.md`。
 - 采纳的标准 commit：`<以 git rev-parse HEAD 实测的 40 位 SHA>`。
 - 每次接受新任务，在修改代码前先实际读取母规范并确认适用条款；如无法读取，明确报告，禁止假称已遵守。
 - 本项目需求 / Spec：`<项目既有权威路径>`。
