@@ -444,5 +444,49 @@ class TestR4N8R5N3CompensationRedirect(R7Helper):
         self.assertEqual(self.residual_lines(out, "HANDOFF.md"), [], out)
 
 
+class TestR6N2ModifiedByOthersVariants(R7Helper):
+    def _run(self, *extra, other_path):
+        real = vb_init._replace
+        st = {}
+
+        def rep(src, dst):
+            if os.path.basename(dst) == "HANDOFF.md" and not st:
+                real(src, dst)
+                st["hit"] = True
+                raise PermissionError(13, "injected after commit")
+            return real(src, dst)
+        real_rb = vb_init.WriteJournal.rollback
+
+        def rb(journal):
+            with open(other_path, "wb") as fh:
+                fh.write(b"OTHER PROCESS\n")
+            return real_rb(journal)
+        with mock.patch.object(vb_init, "_replace", rep), mock.patch.object(vb_init.WriteJournal, "rollback", rb):
+            return self.init("--apply", *extra)
+
+    def test_R6N2_modified_by_others_json(self):
+        hp = os.path.join(self.proj, ".vibecoding", "HANDOFF.md")
+        rc, out = self._run("--json", other_path=hp)
+        j = json.loads(out)
+        self.assertEqual((rc, j["rc"], j["status"]), (1, 1, "failed"), out)
+        with open(hp, "rb") as fh:
+            self.assertEqual(fh.read(), b"OTHER PROCESS\n")
+        msgs = "\n".join(j.get("messages", []))
+        self.assertTrue(self.residual_lines(msgs, "HANDOFF.md"), out)
+        self.assertNotIn("FAILED（已回滚", msgs)
+
+    def test_R6N2_preexisting_file_modified_by_others(self):
+        cfg = os.path.join(self.proj, ".vibecoding", "config.json")
+        os.makedirs(os.path.dirname(cfg))
+        with open(cfg, "w", encoding="utf-8") as fh:
+            json.dump({"skill_version": "0.0.0-old"}, fh)
+        rc, out = self._run(other_path=cfg)
+        self.assertEqual(rc, 1, out)
+        with open(cfg, "rb") as fh:
+            self.assertEqual(fh.read(), b"OTHER PROCESS\n")
+        self.assertTrue(self.residual_lines(out, "config.json"), out)
+        self.assertNotIn("FAILED（已回滚", out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
