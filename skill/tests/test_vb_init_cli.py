@@ -346,5 +346,26 @@ class TestR5N2RealLocationAndRollbackResiduals(Base):
         self._assert_honest(out)
 
 
+
+class R7Helper(Base):
+    def mk_junction(self, link, target):
+        if os.name != "nt":
+            return False
+        ok = subprocess.run(["cmd", "/c", "mklink", "/J", link, target], capture_output=True).returncode == 0
+        if ok:
+            self.addCleanup(lambda: os.path.lexists(link) and subprocess.run(["cmd", "/c", "rmdir", link],
+                                                                               capture_output=True))
+        return ok
+
+    def residual_lines(self, out, name):
+        return [l for l in out.splitlines() if "ResidualRisk" in l and name in l]
+
+class TestR4N9DriveRoot(R7Helper):
+    def test_R4N9_drive_root_inside_and_guard(self):
+        root = os.path.abspath(os.sep)
+        self.assertTrue(vb_init._inside(os.path.join(root, "AGENTS.md"), root))
+        vb_init.WriteJournal(root=root).guard(os.path.join(root, "AGENTS.md"))  # 只校验、不写盘
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

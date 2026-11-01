@@ -233,7 +233,9 @@ def _is_reparse_point(path: str) -> bool:
 
 
 def _inside(path_real: str, root_real: str) -> bool:
-    return path_real == root_real or path_real.startswith(root_real + os.sep)
+    # R4-N9：根为盘符根（如 C:\\）或 / 时已以分隔符结尾，不能再拼一个
+    prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
+    return path_real == root_real or path_real.startswith(prefix)
 
 
 def _describe(path: str) -> str:
@@ -469,8 +471,7 @@ def preflight(project: str, plan: dict) -> list[str]:
     root = os.path.realpath(project)
 
     def inside(p: str) -> bool:
-        rp = os.path.realpath(p)
-        return rp == root or rp.startswith(root + os.sep)
+        return _inside(os.path.realpath(p), root)   # R4-N9：复用根安全判定
 
     targets = ["AGENTS.md", ".vibecoding", ".vibecoding/config.json",
                ".vibecoding/AGENTS.block.md", ".vibecoding/evidence",
