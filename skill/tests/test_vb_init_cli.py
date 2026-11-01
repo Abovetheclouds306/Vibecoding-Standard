@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import subprocess
+from unittest import mock
 import importlib.util
 import io
 import json
@@ -199,6 +201,64 @@ class TestVendorMoveAndMissing(Base):
         rc, out = self.init("--apply")
         self.assertEqual(rc, 0, out)
         self.assertEqual(snapshot(self.proj), before)
+
+
+class TestR4N2CompensateOwnership(Base):
+    """R4-N2：写入失败后的就地补偿必须有归属判据，且识别本次新建目录被替换为 Junction。"""
+
+    def test_other_process_content_not_deleted_and_not_claimed_rolled_back(self):
+        target = os.path.join(self.proj, ".vibecoding", "HANDOFF.md")
+        real_replace = vb_init._replace
+
+        def rep(src, dst):
+            if os.path.basename(dst) == "HANDOFF.md":
+                with open(dst, "wb") as fh:
+                    fh.write(b"OTHER PROCESS DATA\n")
+                raise PermissionError(13, "injected: target busy")
+            return real_replace(src, dst)
+
+        with mock.patch.object(vb_init, "_replace", rep):
+            rc, out = self.init("--apply")
+        self.assertEqual(rc, 1, out)
+        self.assertTrue(os.path.isfile(target), "不得删除不是本进程写入的内容")
+        with open(target, "rb") as fh:
+            self.assertEqual(fh.read(), b"OTHER PROCESS DATA\n")
+        self.assertIn("ResidualRisk", out)
+        self.assertNotIn("FAILED（已回滚", out)
+
+    def test_created_dir_swapped_to_in_project_junction_not_followed(self):
+        if os.name != "nt":
+            self.skipTest("NOT_RUN: Junction 仅 Windows")
+        decoy = os.path.join(self.proj, "decoy")
+        os.makedirs(decoy)
+        with open(os.path.join(decoy, "config.json"), "wb") as fh:
+            fh.write(b"USER CONFIG IN DECOY\n")
+        vb = os.path.join(self.proj, ".vibecoding")
+        real_replace = vb_init._replace
+        fired = []
+
+        def rep(src, dst):
+            if os.path.basename(dst) == "config.json" and not fired:
+                os.remove(src)
+                os.rename(vb, vb + "_moved")
+                ok = subprocess.run(["cmd", "/c", "mklink", "/J", vb, decoy], capture_output=True).returncode == 0
+                fired.append(ok)
+                raise OSError(5, "injected commit failure")
+            return real_replace(src, dst)
+
+        try:
+            with mock.patch.object(vb_init, "_replace", rep):
+                rc, out = self.init("--apply")
+        finally:
+            if os.path.lexists(vb):
+                subprocess.run(["cmd", "/c", "rmdir", vb], capture_output=True)
+        if not fired or not fired[0]:
+            self.skipTest("NOT_RUN: 无法创建 Junction")
+        self.assertEqual(rc, 1, out)
+        with open(os.path.join(decoy, "config.json"), "rb") as fh:
+            self.assertEqual(fh.read(), b"USER CONFIG IN DECOY\n", "不得经项目内 Junction 删除用户文件")
+        self.assertIn("ResidualRisk", out)
+        self.assertNotIn("FAILED（已回滚", out)
 
 
 if __name__ == "__main__":

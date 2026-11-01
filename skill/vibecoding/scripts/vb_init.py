@@ -299,6 +299,11 @@ class WriteJournal:
             cur = os.path.join(cur, part)
             if not os.path.exists(cur):
                 continue
+            # R4-N2：父目录（含本次新建的目录）真实位置与登记不符 ⇒ 被替换（含指向项目内的 Junction）
+            bprev = self.baseline.get(os.path.abspath(cur))
+            if bprev is not None and os.path.realpath(cur) != bprev:
+                raise BoundaryError(
+                    "父路径 %s 真实位置已变化（%s → %s），疑似被替换" % (cur, bprev, os.path.realpath(cur)))
             if _is_reparse_point(cur):
                 sub_real = os.path.realpath(cur)
                 if not _inside(sub_real, self.root_real):
@@ -321,6 +326,9 @@ class WriteJournal:
             cur = parent
         os.makedirs(path, exist_ok=True)
         self.created_dirs.extend(missing)
+        # R4-N2：新建目录登记真实位置，之后被换成 Junction/链接（即使指向项目内）也能被 guard 识别
+        for d in missing:
+            self.baseline.setdefault(os.path.abspath(d), os.path.realpath(d))
 
     # ---------------------------------------------------------- 写入
     def write(self, path: str, data: bytes, step: str = "") -> None:
@@ -370,6 +378,16 @@ class WriteJournal:
                 "actual": _describe(path),
             })
             return
+        # R4-N2：归属判据——只有当前内容仍是本进程写入值时才还原/删除；否则可能是他人内容，保留并如实报告
+        if now != entry["written"]:
+            entry["state"] = "residual"
+            self.residuals.append({
+                "path": path,
+                "reason": "写入失败后当前内容既不是写入前原值也不是本进程写入值（可能被其他进程改动），"
+                          "未还原、未删除（原始失败 %s: %s）" % (type(exc).__name__, exc),
+                "actual": _describe(path),
+            })
+            return
         try:
             if entry["existed"]:
                 _atomic_write(path, entry["original"])
@@ -395,17 +413,25 @@ class WriteJournal:
                 self.guard(path)
             except BoundaryError as exc:
                 actions.append("Skipped(out-of-boundary) %s (%s)" % (path, exc))
+                if e.get("state") != "residual":   # R4-N2：未回滚的条目必须进残留，禁止宣称"已回滚"
+                    self.residuals.append({"path": path, "reason": "回滚前边界校验未通过，未回滚：%s" % exc,
+                                           "actual": "未检查（不跟随被替换的路径）"})
                 continue
             try:
                 cur = _read_raw(path) if os.path.exists(path) else None
             except OSError as exc:          # 读不回就不动它
                 actions.append("Skipped(unreadable) %s (%s)" % (path, exc))
+                self.residuals.append({"path": path, "reason": "回滚时不可读，未回滚：%s" % exc,
+                                       "actual": "不可读"})
                 continue
             if cur == e["original"]:
                 actions.append("Unchanged %s" % path)      # 本来就没改动（含写入已中止）
                 continue
             if cur != e["written"]:
                 actions.append("Skipped(modified-by-others) %s" % path)
+                if e.get("state") != "residual":
+                    self.residuals.append({"path": path, "reason": "内容已被他人改动，未回滚（不覆盖他人改动）",
+                                           "actual": _describe(path)})
                 continue
             try:
                 if e["existed"]:
