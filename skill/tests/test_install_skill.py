@@ -366,6 +366,29 @@ class TestR4N5SourceDestOverlap(R7Helper):
         self.assertEqual(snapshot(self.proj), before)
 
 
+class TestR5N1PathOccupiedByFile(R7Helper):
+    def _check(self, run):
+        before = snapshot(self.proj)
+        for extra in ((), ("--force",)):
+            rc, out = run(*extra)
+            self.assertEqual(rc, 2, out)
+            self.assertIn("冲突", out)
+            self.assertEqual(snapshot(self.proj), before, "冲突时必须零写入")
+
+    def test_R5N1_parent_of_dest_is_file(self):
+        self.write(os.path.join(self.proj, "skills"), "user file\n")
+        self._check(self.install)
+
+    def test_R5N1_dest_itself_is_file(self):
+        self.write(self.dest, "user file\n")
+        self._check(self.install)
+
+    def test_R5N1_default_layout_dot_claude_is_file(self):
+        self.write(os.path.join(self.proj, ".claude"), "user file\n")
+        self._check(lambda *e: self.run_argv(["--target", "claude-code", "--scope", "project",
+                                              "--project", self.proj, "--source", self.src, *e]))
+
+
 class TestFailureHonesty(Base):
     def test_write_failure_reports_incomplete(self):
         def boom(*a, **k):
