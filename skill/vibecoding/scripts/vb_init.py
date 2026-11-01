@@ -30,7 +30,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -473,7 +475,10 @@ def find_standard(project: str, explicit: str | None) -> tuple[str | None, str]:
     here = os.path.dirname(os.path.abspath(__file__))
     candidates: list[tuple[str, str]] = []
     if explicit:
-        candidates.append((explicit, "--standard 参数"))
+        # 显式指定即唯一来源：路径无效时如实拒绝，不得静默回退到其他副本（P1-CLI 技能缺失如实报告）
+        if os.path.isfile(os.path.join(explicit, "tools", "verify_manifest.py")):
+            return os.path.abspath(explicit), "--standard 参数"
+        return None, "--standard 指定的路径不存在或不是有效标准副本（未回退到其他副本）: %s" % explicit
     env = os.environ.get("VB_STANDARD_HOME")
     if env:
         candidates.append((env, "环境变量 VB_STANDARD_HOME"))
@@ -638,7 +643,7 @@ def print_residuals(residuals: list[dict]) -> bool:
     return True
 
 
-def main(argv: list[str]) -> int:
+def _main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Vibecoding Skill 受保护初始化（默认 dry-run）")
     ap.add_argument("--project", default=".", help="目标项目目录（默认当前目录）")
     ap.add_argument("--standard", help="标准副本目录（含 tools/verify_manifest.py）")
@@ -864,7 +869,8 @@ def main(argv: list[str]) -> int:
     result["block_updated"] = (action == "block_updated")
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        result["status"] = "needs_decision" if result["rc"] == 2 else "ok"
+        _JSON_RESULT.append(result)
     else:
         print("== Vibecoding 初始化（%s）==" % result["mode"])
         print("项目      : %s" % project)
@@ -890,6 +896,47 @@ def main(argv: list[str]) -> int:
             verdict = "OK"
         print("== 结论: %s ==" % verdict)
     return result["rc"]
+
+# ------------------------------------------------ --json 输出契约（P1-CLI-1）
+# 成功路径：输出 result（含 status=ok|needs_decision、rc、steps …）。
+# 任何非成功路径（拒绝 / 失败 / 参数错误 / 未预期异常）：也只输出一个 JSON 对象，
+#   {"status": "refused"|"failed"|"usage_error", "rc": <与进程退出码相同>, "error": <首条说明>,
+#    "messages": [<原散文逐行>], "mode", "project", "steps": [], "needs_decision": false, "block_updated": false}
+# stdout 上不再出现 JSON 以外的散文。
+_JSON_RESULT: list = []
+
+
+def main(argv: list[str]) -> int:
+    if "--json" not in argv:
+        return _main(argv)
+    del _JSON_RESULT[:]
+    buf = io.StringIO()
+    usage_error = False
+    try:
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            rc = _main(argv)
+    except SystemExit as exc:  # argparse 用法错误
+        rc = exc.code if isinstance(exc.code, int) else 2
+        usage_error = True
+    except Exception as exc:  # noqa: BLE001 — JSON 模式下也要给出契约内的失败结果
+        buf.write("ERROR: 未预期异常 %s: %s\n" % (type(exc).__name__, exc))
+        rc = 1
+    lines = [l.rstrip() for l in buf.getvalue().splitlines() if l.strip()]
+    if _JSON_RESULT and _JSON_RESULT[-1].get("rc") == rc and not usage_error:
+        payload = _JSON_RESULT[-1]
+        if lines:
+            payload["messages"] = lines
+    else:
+        first = lines[0] if lines else ""
+        status = "usage_error" if usage_error else ("refused" if first.startswith("REFUSED") else "failed")
+        proj = None
+        if "--project" in argv and argv.index("--project") + 1 < len(argv):
+            proj = os.path.abspath(argv[argv.index("--project") + 1])
+        payload = {"status": status, "rc": rc, "error": first, "messages": lines,
+                   "mode": "apply" if "--apply" in argv else "dry-run", "project": proj,
+                   "steps": [], "needs_decision": False, "block_updated": False}
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return rc
 
 
 if __name__ == "__main__":
