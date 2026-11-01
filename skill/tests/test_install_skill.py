@@ -432,6 +432,21 @@ class TestR7N2DotDotPrefixedComponent(R7Helper):
         self.assertEqual(snapshot(self.outside), before, "不得经 ..x Junction 写到项目外")
 
 
+class TestR7N6DanglingJunctionAncestor(R7Helper):
+    def test_R7N6_dangling_junction_outside_project_rc1(self):
+        tgt = os.path.join(self.tmp, "gone")
+        os.makedirs(tgt)
+        dj = os.path.join(self.tmp, "dj")
+        if not make_junction(dj, tgt):
+            self.skipTest("NOT_RUN: 无法创建 Junction")
+        os.rmdir(tgt)
+        before = snapshot(self.tmp)
+        rc, out = self.run_argv(["--target", "claude-code", "--scope", "project", "--project", self.proj,
+                                 "--path", os.path.join(dj, "x"), "--source", self.src, "--force"])
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(snapshot(self.tmp), before)
+
+
 class TestFailureHonesty(Base):
     def test_write_failure_reports_incomplete(self):
         def boom(*a, **k):

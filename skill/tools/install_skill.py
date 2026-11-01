@@ -278,6 +278,10 @@ def main(argv):
     # R5-N1：目标目录本身或其尚不存在的上层位置被普通文件等非目录占用 → 预检冲突（rc2，零写入，--force 不覆盖）
     cur = dest
     while not os.path.isdir(cur):
+        if os.path.lexists(cur) and is_link_like(cur):   # R7-N6：悬空链接按链接拒绝（rc1）
+            print("REFUSED: 安装路径分量是符号链接/Junction/重解析点（目标不存在），拒绝跟随写入: %s" % cur)
+            print("== 结论: REFUSED（未写入任何文件，退出码 1）==")
+            return 1
         if os.path.lexists(cur):
             print("  冲突: %s — 所需目录位置被非目录占用" % cur)
             print("REFUSED: 存在归属不明的冲突；--force 也不会覆盖。未写入任何文件。")
