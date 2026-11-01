@@ -15,18 +15,20 @@
 | R4-N1 | 安装器：普通文件占据所需目录位置，--force 下仍部分写入后 rc1 | 自测 PASS | a887cd9；预检判为冲突 rc2、零写入（含 --force）；待 R5 复核 |
 | R4-N2 | vb_init `_compensate` 无归属判据，项目内 Junction 重定向导致误删 | 自测 PASS | 9c91a9e；仅当前内容==本进程写入值才还原/删除，否则记残留；新建目录登记 baseline 并在父路径校验；回滚跳过项一律进残留，不再宣称“已回滚” |
 | R4-N3 | 安装器：内层链接分量 rc2（文档写 rc1） | 自测 PASS | a887cd9；平凡的退出码对齐：链接/越界 → REFUSED rc1；测试断言收紧为 rc==1 |
-| R4-N4 | 安装器：dest 上层分量为 Junction 时跟随写出项目外 | OPEN | 见 R4-REPORT |
-| R4-N5 | 安装器：未检查 dest 与 source 重叠 | OPEN | 见 R4-REPORT |
-| R4-N6 | vb_init `--json` 包装层按字面匹配 argv（缩写/等号写法） | OPEN | 见 R4-REPORT |
-| R4-N7 | `--standard` / VB_STANDARD_HOME 可指向任意自校验目录 | OPEN | 既有；见 R4-REPORT |
-| R4-N8 | c08407d 残留报告描述不准确 | OPEN | R4-N2 修复顺带让未回滚项进残留，但描述准确性未逐项复核，仍 OPEN |
-| R4-N9 | 项目位于盘符根目录时写入全被拒 | OPEN | Info |
-| R4-N10 | 测试与清单的小缺口（清单中 ../、绝对路径键被保留等） | OPEN | Info |
-| R5-N1 | 安装器：dest 本身或其上层被普通文件占据时未进预检冲突（执行阶段异常 rc1，零写入） | OPEN | 见 R5-REPORT；本轮不修 |
+| R4-N4 | 安装器：dest 上层分量为 Junction 时跟随写出项目外 | 自测 PASS | 6a0d17a；project scope 下项目根（不含）→dest 各分量为链接 → REFUSED rc1；user scope 的 ~ 及其上层不检查（测试禁止触碰 ~，NOT_RUN） |
+| R4-N5 | 安装器：未检查 dest 与 source 重叠 | 自测 PASS | 56c60fe；realpath 相同或互相包含 → REFUSED rc1，零写入 |
+| R4-N6 | vb_init `--json` 包装层按字面匹配 argv（缩写/等号写法） | 部分修复 / 余项待 Owner 决定 | d2a83c3；allow_abbrev=False（--jso/--app 为用法错误 rc2），JSON 兜底的 mode/project 改为解析推导（支持 --project=X）。待 Owner 决定：`--json --help` 的 status（当前 usage_error rc0）与 KeyboardInterrupt 的 JSON 输出——改动属于 --json 状态契约变更 |
+| R4-N7 | `--standard` / VB_STANDARD_HOME 可指向任意自校验目录 | DEFERRED（待 Owner 决定） | 修复需固定 MANIFEST 哈希，改变 --standard 契约并新增功能，超出本轮授权 |
+| R4-N8 | c08407d 残留报告描述不准确 | 自测 PASS | 691f4dc；补偿先 guard 后读，guard 失败不经被替换路径读取/描述，也不再宣称「本次未改动」 |
+| R4-N9 | 项目位于盘符根目录时写入全被拒 | 自测 PASS | 608118c；`_inside` 根安全（根已以分隔符结尾时不再拼接），preflight 复用 |
+| R4-N10 | 测试与清单的小缺口（清单中 ../、绝对路径键被保留等） | 自测 PASS + DOCS | ace30ec；合并时丢弃非法清单键；新增内层 Junction 指向 dest 内用例（杀 M2）。DOCS：清单无签名/认证，仅作归属记录，伪造匹配哈希可让文件被视为「本工具所有」 |
+| R5-N1 | 安装器：dest 本身或其上层被普通文件占据时未进预检冲突（执行阶段异常 rc1，零写入） | 自测 PASS | 1900fd9；dest 及其不存在的上层位置被非目录占用 → 预检冲突 rc2，零写入（含 --force、默认 .claude 布局） |
 | R5-N2 | R4-N2 核心机制缺测试保护 | 自测 PASS | a1a32c8；M4–M7 均 KILLED；待 R6 复核 |
-| R5-N3 | 补偿阶段残留未在回滚后核对，描述可能与事实相反（R4-N8 延伸） | OPEN | 见 R5-REPORT；本轮不修 |
-| R5-N4 | 安装器 TOCTOU：预检后出现的占位文件 | OPEN | Info；本轮不修 |
+| R5-N3 | 补偿阶段残留未在回滚后核对，描述可能与事实相反（R4-N8 延伸） | 自测 PASS | 691f4dc；回滚时若边界通过且已确认收敛到原值（Unchanged/Restored/Removed），撤销该路径的补偿残留并记 Reconciled 动作 |
+| R5-N4 | 安装器 TOCTOU：预检后出现的占位文件 | DOCS | 「零写入」仅是预检层保证；预检与写入之间并发出现的占位仍可能导致执行阶段失败（rc1），不引入事务框架 |
 | R5-N5 | HANDOFF §9 skip 计数不准 | 已更正 | skip 数随仓库所在盘而变：F: worktree 为 1，与 %TEMP% 同盘为 2 |
+| R6-N1 | 开发者临时目录名与复核者冲突（vbr6/vbR6） | 已更正（流程） | R7 起开发专用目录 %TEMP%\vbdev_r7 |
+| R6-N2 | M7 保护只有一个文本模式用例 | 自测 PASS | 337aef1；新增 --json 变体与「预先存在文件被他人改动」变体，M7 下两例均 FAIL |
 | R4-c08407d | 对 c08407d（及本分支）的独立复核 | 已完成 R4 | R4-REPORT.md：PASS-with-findings；R5 复核 5327eb9..HEAD 待安排 |
 | VENDOR-SCOPE | vendor 范围决策（全量 vendored 还是精简） | OPEN | 需 Chris 决定 |
 | POC-PUSH | poc/vibecoding-skill-v0.1.0 与本 fix 分支均未推送远程 | OPEN | 推送需 Chris 明确批准 |

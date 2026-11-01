@@ -87,3 +87,14 @@
 - 全套 unittest discover：rc=0，88 OK，skipped=1（本 worktree，原因见 §9 注）。verify_manifest（cwd=vendor）：rc=0，PASS 33/0/0/0。
 - R6 复核入口：范围 `git log c1ae6e3..fix/skill-ins1-cli-v0.1.1`；在独立副本上用 R5 raw\mutate_r5.py 的 M4–M7 重跑全套与 test_vb_init_cli，确认四个变异均 KILLED、HEAD 全绿；R5-N1/N3/N4 仍 OPEN 未修。
 - NOT_RUN：文件符号链接、真实 TOCTOU 竞态、跨盘（在同盘副本中）、Linux/macOS（Junction 用例在非 Windows 下 skip）、user scope。
+
+## 11. R7 轮（R4-N4..N10、R5-N1/N3/N4、R6-N2，开发者自测，非独立复核）
+- 范围：`git log 6250adb..fix/skill-ins1-cli-v0.1.1`。开发临时目录：%TEMP%\vbdev_r7（旧版副本 old6250\，变异 mut\ 与 mutate_r7.py）。
+- 提交：6a0d17a R4-N4；56c60fe R4-N5；1900fd9 R5-N1；ace30ec R4-N10（均为 tools/install_skill.py + tests/test_install_skill.py）；608118c R4-N9；d2a83c3 R4-N6；691f4dc R4-N8/R5-N3（均为 vibecoding/scripts/vb_init.py + tests/test_vb_init_cli.py）；337aef1 R6-N2（仅 tests/test_vb_init_cli.py）；以及本文档提交。
+- 行为变化：dest 被文件占据由 REFUSED rc1 改为冲突 rc2（R5-N1）；--json 下前缀缩写不再被接受。
+- 判别：新增 17 例 × 6250adb → 14 FAIL、3 PASS（R4-N10 内层 Junction 与 R6-N2 两例为变异保护用例，旧版本来就正确）；× HEAD 全部 PASS。
+- 变异（python %TEMP%\vbdev_r7\mutate_r7.py，经 VB_INSTALLER_UNDER_TEST / VB_INIT_UNDER_TEST）：A 去掉链路分量链接检查、B overlap=False、C 去掉非目录占用检查、D 清单键不过滤、E `_inside` 恢复旧拼接、F allow_abbrev=True、G 补偿 guard 失败仍 _describe、H 不撤销已收敛残留、M2（R5）边界降级为冲突、M7（R5）去掉被他人改动残留——全部 KILLED。
+- 全套 unittest discover（cwd=skill\tests）：rc=0，105 OK，skipped=1；verify_manifest（cwd=vendor）：rc=0，PASS 33/0/0/0。
+- 待 Owner 决定：R4-N7（固定标准哈希）、R4-N6 余项（--json --help 的 status、KeyboardInterrupt）。
+- R7 复核建议：用独立副本重跑上述变异；尝试 --project 为相对路径/含 `..` 时的分量检查、--path 为绝对路径（跳过链路检查，仅 dest 自身与 guard）、user scope、盘符根实写（本轮仅函数级）。
+- NOT_RUN：文件符号链接（WinError 1314）、真实 TOCTOU 竞态、user scope、Linux/macOS、盘符根实际写入。
