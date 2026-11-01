@@ -261,5 +261,90 @@ class TestR4N2CompensateOwnership(Base):
         self.assertNotIn("FAILED（已回滚", out)
 
 
+class TestR5N2RealLocationAndRollbackResiduals(Base):
+    """R5-N2：保护 R4-N2 的核心机制。回滚前把目录换成指向项目内、内容逐字节相同副本的 Junction，
+    只比对内容无法识别，必须靠“新建目录登记真实位置 + 父路径真实位置比对”；并保护回滚跳过项进残留。"""
+
+    def _fail_handoff_after_commit(self):
+        real = vb_init._replace
+
+        def rep(src, dst):
+            r = real(src, dst)
+            if os.path.basename(dst) == "HANDOFF.md":
+                raise PermissionError(13, "injected after commit")
+            return r
+        return rep
+
+    def _swap_at_rollback(self, rel, *extra):
+        if os.name != "nt":
+            self.skipTest("NOT_RUN: Junction 仅 Windows")
+        d = os.path.join(self.proj, *rel.split("/"))
+        decoy = os.path.join(self.proj, "decoy_" + rel.replace("/", "_").strip("."))
+        real_rb = vb_init.WriteJournal.rollback
+        st = {}
+
+        def rb(journal):
+            shutil.copytree(d, decoy)
+            os.rename(d, d + "_moved")
+            st["j"] = subprocess.run(["cmd", "/c", "mklink", "/J", d, decoy], capture_output=True).returncode == 0
+            st["before"] = snapshot(decoy)
+            return real_rb(journal)
+
+        try:
+            with mock.patch.object(vb_init, "_replace", self._fail_handoff_after_commit()), \
+                    mock.patch.object(vb_init.WriteJournal, "rollback", rb):
+                rc, out = self.init("--apply", *extra)
+        finally:
+            if os.path.lexists(d) and os.path.realpath(d) != os.path.abspath(d):
+                subprocess.run(["cmd", "/c", "rmdir", d], capture_output=True)
+        if not st.get("j"):
+            self.skipTest("NOT_RUN: 无法创建 Junction")
+        self.assertTrue(st["before"], "副本应非空（逐字节相同的已写入文件）")
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(snapshot(decoy), st["before"], "不得经项目内 Junction 改动/删除副本中的文件")
+        return out
+
+    def _assert_honest(self, out):
+        self.assertIn("ResidualRisk", out)
+        self.assertNotIn("FAILED（已回滚", out)
+
+    def test_E1_created_dir_swapped_to_identical_in_project_copy(self):
+        self._assert_honest(self._swap_at_rollback(".vibecoding"))
+
+    def test_E3_nested_created_dir_swapped_to_identical_in_project_copy(self):
+        self._assert_honest(self._swap_at_rollback(".vibecoding/evidence"))
+
+    def test_E2_preexisting_dir_swapped_to_identical_in_project_copy(self):
+        os.makedirs(os.path.join(self.proj, ".vibecoding"))
+        with open(os.path.join(self.proj, ".vibecoding", "user_note.txt"), "wb") as fh:
+            fh.write(b"USER NOTE\n")
+        self._assert_honest(self._swap_at_rollback(".vibecoding"))
+        with open(os.path.join(self.proj, ".vibecoding_moved", "user_note.txt"), "rb") as fh:
+            self.assertEqual(fh.read(), b"USER NOTE\n")
+
+    def test_E7_json_reports_failed_with_residuals_no_rollback_claim(self):
+        out = self._swap_at_rollback(".vibecoding", "--json")
+        j = json.loads(out)
+        self.assertEqual((j.get("status"), j.get("rc")), ("failed", 1), out)
+        self._assert_honest(json.dumps(j, ensure_ascii=False))
+
+    def test_modified_by_others_at_rollback_is_residual(self):
+        hf = os.path.join(self.proj, ".vibecoding", "HANDOFF.md")
+        real_rb = vb_init.WriteJournal.rollback
+
+        def rb(journal):
+            with open(hf, "wb") as fh:
+                fh.write(b"OTHER PROCESS AFTER COMPENSATION\n")
+            return real_rb(journal)
+
+        with mock.patch.object(vb_init, "_replace", self._fail_handoff_after_commit()), \
+                mock.patch.object(vb_init.WriteJournal, "rollback", rb):
+            rc, out = self.init("--apply")
+        self.assertEqual(rc, 1, out)
+        with open(hf, "rb") as fh:
+            self.assertEqual(fh.read(), b"OTHER PROCESS AFTER COMPENSATION\n")
+        self._assert_honest(out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
