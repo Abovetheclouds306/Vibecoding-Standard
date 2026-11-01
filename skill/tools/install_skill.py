@@ -139,12 +139,22 @@ def load_manifest(dest: str):
 
 def plan_install(source: str, dest: str, src_files: dict, owned: dict):
     """逐文件分类。返回 dict(create, update, same, conflicts)。"""
-    create, update, same, conflicts = [], [], [], []
+    create, update, same, conflicts, boundary = [], [], [], [], []
     for rel, h in sorted(src_files.items()):
         try:
             target = guard(dest, rel)
         except BoundaryError as exc:
-            conflicts.append((rel, str(exc)))
+            boundary.append((rel, str(exc)))  # R4-N3：链接/越界 → REFUSED rc1，不降级为 rc2 冲突
+            continue
+        # R4-N1：所需父目录位置被普通文件等非目录占用 → 冲突（预检阶段判出，不写任何文件）
+        blocked, cur = None, dest
+        for part in rel.split("/")[:-1]:
+            cur = os.path.join(cur, part)
+            if os.path.lexists(cur) and not os.path.isdir(cur):
+                blocked = cur
+                break
+        if blocked:
+            conflicts.append((rel, "所需目录位置被非目录占用: %s" % blocked))
             continue
         if not os.path.lexists(target):
             create.append(rel)
@@ -161,7 +171,7 @@ def plan_install(source: str, dest: str, src_files: dict, owned: dict):
             conflicts.append((rel, "技能文件已被他人修改（与安装清单登记哈希不同）"))
         else:
             conflicts.append((rel, "内容不同且无法确认归属（未在安装清单登记）"))
-    return {"create": create, "update": update, "same": same, "conflicts": conflicts}
+    return {"create": create, "update": update, "same": same, "conflicts": conflicts, "boundary": boundary}
 
 
 def write_file(dest: str, rel: str, data: bytes) -> None:
@@ -255,6 +265,13 @@ def main(argv):
         print("  冲突: %s — %s" % (rel, why))
     if stale:
         print("  旧版遗留的技能文件（源中已不存在，保留不删）: %s" % stale[:10])
+
+    if plan["boundary"]:
+        for rel, why in plan["boundary"][:20]:
+            print("  链接/越界: %s — %s" % (rel, why))
+        print("REFUSED: 安装路径中存在链接/重解析点或越界分量，拒绝跟随写入。")
+        print("== 结论: REFUSED（未写入任何文件，退出码 1）==")
+        return 1
 
     if plan["conflicts"]:
         print("REFUSED: 存在归属不明或被修改的冲突文件；--force 也不会覆盖它们。未写入任何文件。")

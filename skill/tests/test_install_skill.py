@@ -269,7 +269,7 @@ class TestLinksAndBoundary(Base):
             rc, out = self.install("--force")
         except Exception as exc:
             self.fail("安装器抛出未处理异常: %r" % exc)
-        self.assertNotEqual(rc, 0, out)
+        self.assertEqual(rc, 1, out)  # R4-N3：链接分量按文档为 REFUSED rc1
         self.assertEqual(snapshot(self.outside), before, "不得经链接写到安装目录之外")
         self.assertTrue(inst_is_link(refs), "不得删除用户的链接")
 
@@ -283,8 +283,43 @@ class TestLinksAndBoundary(Base):
         before = snapshot(self.outside)
         self.make_source({"SKILL.md": "skill v2\n", "references/a.md": "A1\n", "scripts/s.py": "print(1)\n"})
         rc, out = self.install("--force")
-        self.assertNotEqual(rc, 0, out)
+        self.assertEqual(rc, 1, out)  # R4-N3
         self.assertEqual(snapshot(self.outside), before)
+
+
+class TestR4N1FileOccupiesDir(Base):
+    """R4-N1：用户普通文件占据技能需要的目录位置。"""
+
+    def _occupy(self):
+        os.makedirs(self.dest, exist_ok=True)
+        self.write(os.path.join(self.dest, "scripts"), "user file named scripts\n")
+
+    def test_no_force_reports_conflict_and_writes_nothing(self):
+        self._occupy()
+        before = snapshot(self.dest)
+        rc, out = self.install()
+        self.assertEqual(rc, 2, out)
+        self.assertIn("冲突: scripts/s.py", out)
+        self.assertEqual(snapshot(self.dest), before)
+
+    def test_force_refuses_rc2_and_writes_nothing(self):
+        self._occupy()
+        before = snapshot(self.dest)
+        rc, out = self.install("--force")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("冲突: scripts/s.py", out)
+        self.assertEqual(snapshot(self.dest), before, "冲突时一个文件也不得写（含 --force）")
+        self.assertNotIn("安装完成", out)
+
+    def test_after_install_file_replacing_dir_is_conflict(self):
+        self.assertEqual(self.install()[0], 0)
+        shutil.rmtree(os.path.join(self.dest, "scripts"))
+        self.write(os.path.join(self.dest, "scripts"), "user\n")
+        self.make_source({"SKILL.md": "skill v2\n", "references/a.md": "A1\n", "scripts/s.py": "print(1)\n"})
+        before = snapshot(self.dest)
+        rc, out = self.install("--force")
+        self.assertEqual(rc, 2, out)
+        self.assertEqual(snapshot(self.dest), before)
 
 
 class TestFailureHonesty(Base):
