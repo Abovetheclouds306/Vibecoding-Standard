@@ -441,7 +441,10 @@ class TestR4N8R5N3CompensationRedirect(R7Helper):
             self.assertEqual(fh.read(), b"DECOY\n")
         self.assertFalse(os.path.exists(os.path.join(vb, "HANDOFF.md")), out)
         self.assertNotIn("本次未改动", out)
-        self.assertEqual(self.residual_lines(out, "HANDOFF.md"), [], out)
+        # R7-N1 更正：补偿时路径已被重定向，写入落点无法证明，残留必须保留，但描述须反映回滚后复核
+        self.assertTrue(self.residual_lines(out, "HANDOFF.md"), out)
+        self.assertIn("实际落点未知", out)
+        self.assertNotIn("FAILED（已回滚", out)
 
 
 class TestR6N2ModifiedByOthersVariants(R7Helper):
@@ -485,6 +488,48 @@ class TestR6N2ModifiedByOthersVariants(R7Helper):
         with open(cfg, "rb") as fh:
             self.assertEqual(fh.read(), b"OTHER PROCESS\n")
         self.assertTrue(self.residual_lines(out, "config.json"), out)
+        self.assertNotIn("FAILED（已回滚", out)
+
+
+class TestR7N1RedirectedCommitNotReconciled(R7Helper):
+    def test_R7N1_commit_through_junction_then_swap_back_keeps_residual(self):
+        vb = os.path.join(self.proj, ".vibecoding")
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        secret = b"OUTSIDE SECRET\n"
+        with open(os.path.join(outside, "HANDOFF.md"), "wb") as fh:
+            fh.write(secret)
+        real = vb_init._replace
+        st = {}
+
+        def rep(src, dst):
+            if os.path.basename(dst) == "HANDOFF.md" and not st:
+                os.rename(vb, vb + "_moved")
+                st["ok"] = self.mk_junction(vb, outside)
+                if not st["ok"]:
+                    os.rename(vb + "_moved", vb)
+                    return real(src, dst)
+                shutil.move(os.path.join(vb + "_moved", os.path.basename(src)),
+                            os.path.join(outside, os.path.basename(src)))
+                real(src, dst)            # 提交经 Junction 落到项目外
+                raise PermissionError(13, "injected after commit")
+            return real(src, dst)
+        real_rb = vb_init.WriteJournal.rollback
+
+        def rb(journal):
+            if st.get("ok"):
+                subprocess.run(["cmd", "/c", "rmdir", vb], capture_output=True)
+                os.rename(vb + "_moved", vb)
+            return real_rb(journal)
+        with mock.patch.object(vb_init, "_replace", rep), mock.patch.object(vb_init.WriteJournal, "rollback", rb):
+            rc, out = self.init("--apply")
+        if not st.get("ok"):
+            self.skipTest("NOT_RUN: 无法创建 Junction")
+        self.assertEqual(rc, 1, out)
+        with open(os.path.join(outside, "HANDOFF.md"), "rb") as fh:
+            overwritten = fh.read() != secret
+        self.assertTrue(overwritten, "场景前提：外部文件已被本进程覆盖")
+        self.assertTrue(self.residual_lines(out, "HANDOFF.md"), "外部文件被覆盖却无 ResidualRisk:\n" + out)
         self.assertNotIn("FAILED（已回滚", out)
 
 

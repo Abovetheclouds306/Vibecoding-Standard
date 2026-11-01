@@ -361,6 +361,7 @@ class WriteJournal:
             self.guard(path)
         except BoundaryError as bexc:
             entry["state"] = "residual"
+            entry["redirected"] = True   # R7-N1：写入实际落点未知，回滚时原路径收敛也不能证明已还原
             self.residuals.append({
                 "path": path,
                 "reason": "写入失败后自动还原前边界校验未通过，已停止还原；路径已被重定向/替换，"
@@ -411,6 +412,14 @@ class WriteJournal:
     # ---------------------------------------------------------- 回滚
     def _resolve_residual(self, e: dict, actions: list) -> None:
         """R5-N3：补偿阶段登记的残留，若回滚时边界已通过且已确认收敛到原值，则撤销该残留，避免过期描述。"""
+        if e.get("state") == "residual" and e.get("redirected"):
+            # R7-N1：失败时路径曾被重定向，本进程写入可能落在别处；原路径内容收敛不等于真实写入位置已还原
+            for r in self.residuals:
+                if r["path"] == e["path"]:
+                    r["actual"] = ("回滚时原路径已为写入前内容；但失败时路径曾被重定向，"
+                                   "本进程写入的实际落点未知（未检查），可能已覆盖项目外文件")
+            actions.append("Rechecked %s（原路径已收敛，但写入实际落点未知，残留保留）" % e["path"])
+            return
         if e.get("state") == "residual":
             self.residuals = [r for r in self.residuals if r["path"] != e["path"]]
             e["state"] = "resolved_in_rollback"
