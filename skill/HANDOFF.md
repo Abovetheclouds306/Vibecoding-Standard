@@ -16,7 +16,7 @@
 ## 3. 行为变化
 - 安装器：写 `.vibecoding-install.json`（每个归属文件的 sha256）。仅新建、或更新「在清单中且未被改动」的文件；**从不删除**（过期的旧归属文件保留并报告）。
   任何冲突（归属文件被改、无清单且内容不同、文件位置变成目录、清单损坏）→ rc2 且一个文件都不写，--force 也不例外；已存在且有差异但没给 --force → rc2。
-  目标路径任一层是符号链接/Junction 或 realpath 越界 → rc1。写入/校验失败 → rc1 `FAILED`，只有成功才输出「安装完成」。
+  目标目录本身、其内任一分量、project scope 下项目根到目标之间任一分量是符号链接/Junction，或 realpath 越界 → rc1（不检查 user scope 的 ~ 及其上层、绝对或越出项目的 --path 的上层；见 §12）。写入/校验失败 → rc1 `FAILED`，只有成功才输出「安装完成」。
 - vb_init：`--json` 下所有路径只输出一个 JSON 对象：成功带 `status: ok|needs_decision`；失败为 `status: refused|failed|usage_error`，含 `rc`（等于退出码）、`error`、`messages`、`steps: []`、`needs_decision: false`、`block_updated: false`。
   显式 `--standard` 无效时拒绝（rc1），不再静默回退到技能内置/环境变量副本。
 
