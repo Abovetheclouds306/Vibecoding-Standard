@@ -386,5 +386,63 @@ class TestR4N6ArgvParsing(R7Helper):
         self.assertEqual(j["mode"], "apply")
 
 
+class TestR4N8R5N3CompensationRedirect(R7Helper):
+    def _swap_handoff(self, target):
+        vb = os.path.join(self.proj, ".vibecoding")
+        real = vb_init._replace
+        st = {}
+
+        def rep(src, dst):
+            if os.path.basename(dst) == "HANDOFF.md" and not st:
+                real(src, dst)
+                os.rename(vb, vb + "_moved")
+                st["ok"] = self.mk_junction(vb, target)
+                raise PermissionError(13, "injected after commit")
+            return real(src, dst)
+        return vb, st, rep
+
+    def test_R4N8_guard_failure_does_not_read_through_redirect(self):
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        secret = b"OUTSIDE FILE CONTENT\n"
+        with open(os.path.join(outside, "HANDOFF.md"), "wb") as fh:
+            fh.write(secret)
+        vb, st, rep = self._swap_handoff(outside)
+        with mock.patch.object(vb_init, "_replace", rep):
+            rc, out = self.init("--apply")
+        if not st.get("ok"):
+            self.skipTest("NOT_RUN: 无法创建 Junction")
+        self.assertEqual(rc, 1, out)
+        with open(os.path.join(outside, "HANDOFF.md"), "rb") as fh:
+            self.assertEqual(fh.read(), secret)
+        self.assertNotIn(hashlib.sha256(secret).hexdigest()[:16], out, "不得经被替换路径读取外部文件")
+        self.assertNotIn("本次未改动", out)
+        self.assertTrue(self.residual_lines(out, "HANDOFF.md"), out)
+
+    def test_R5N3_residual_reconciled_after_swap_back(self):
+        decoy = os.path.join(self.proj, "decoy")
+        os.makedirs(decoy)
+        with open(os.path.join(decoy, "HANDOFF.md"), "wb") as fh:
+            fh.write(b"DECOY\n")
+        vb, st, rep = self._swap_handoff(decoy)
+        real_rb = vb_init.WriteJournal.rollback
+
+        def rb(journal):
+            if st.get("ok"):
+                subprocess.run(["cmd", "/c", "rmdir", vb], capture_output=True)
+                os.rename(vb + "_moved", vb)
+            return real_rb(journal)
+        with mock.patch.object(vb_init, "_replace", rep), mock.patch.object(vb_init.WriteJournal, "rollback", rb):
+            rc, out = self.init("--apply")
+        if not st.get("ok"):
+            self.skipTest("NOT_RUN: 无法创建 Junction")
+        self.assertEqual(rc, 1, out)
+        with open(os.path.join(decoy, "HANDOFF.md"), "rb") as fh:
+            self.assertEqual(fh.read(), b"DECOY\n")
+        self.assertFalse(os.path.exists(os.path.join(vb, "HANDOFF.md")), out)
+        self.assertNotIn("本次未改动", out)
+        self.assertEqual(self.residual_lines(out, "HANDOFF.md"), [], out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

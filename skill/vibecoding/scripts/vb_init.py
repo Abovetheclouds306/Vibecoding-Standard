@@ -356,6 +356,18 @@ class WriteJournal:
     def _compensate(self, entry: dict, exc: BaseException) -> None:
         """单条写入失败后就地收敛：能还原就还原，不能就如实登记残留。"""
         path = entry["path"]
+        # R4-N8/R5-N3：先核对边界再读取；边界不通过时不经被替换的路径读取或描述，也不宣称"本次未改动"
+        try:
+            self.guard(path)
+        except BoundaryError as bexc:
+            entry["state"] = "residual"
+            self.residuals.append({
+                "path": path,
+                "reason": "写入失败后自动还原前边界校验未通过，已停止还原；路径已被重定向/替换，"
+                          "本进程写入是否已提交未知：%s（原始失败 %s: %s）" % (bexc, type(exc).__name__, exc),
+                "actual": "未检查（路径已被重定向/替换，不跟随读取）",
+            })
+            return
         try:
             now = _read_raw(path) if os.path.exists(path) else None
         except OSError:
@@ -369,17 +381,7 @@ class WriteJournal:
         # 覆盖成项目内原内容、或直接删掉。此处做不到消除 TOCTOU（guard 与随后的
         # 写盘之间仍有极短窗口），只是让"补偿"与"首次写入"受同一套边界约束，
         # 并把无法还原的情况落到 ResidualRisk 上而不是静默放过。
-        try:
-            self.guard(path)
-        except BoundaryError as bexc:
-            entry["state"] = "residual"
-            self.residuals.append({
-                "path": path,
-                "reason": "写入失败后自动还原前边界校验未通过，已停止还原（该路径本次未改动）："
-                          "%s（原始失败 %s: %s）" % (bexc, type(exc).__name__, exc),
-                "actual": _describe(path),
-            })
-            return
+        # （补偿阶段的边界复核已前移到读取之前，见上）
         # R4-N2：归属判据——只有当前内容仍是本进程写入值时才还原/删除；否则可能是他人内容，保留并如实报告
         if now != entry["written"]:
             entry["state"] = "residual"
@@ -407,6 +409,13 @@ class WriteJournal:
             })
 
     # ---------------------------------------------------------- 回滚
+    def _resolve_residual(self, e: dict, actions: list) -> None:
+        """R5-N3：补偿阶段登记的残留，若回滚时边界已通过且已确认收敛到原值，则撤销该残留，避免过期描述。"""
+        if e.get("state") == "residual":
+            self.residuals = [r for r in self.residuals if r["path"] != e["path"]]
+            e["state"] = "resolved_in_rollback"
+            actions.append("Reconciled %s（补偿阶段残留已在回滚时复核并收敛）" % e["path"])
+
     def rollback(self) -> list[str]:
         actions: list[str] = []
         for e in reversed(self.entries):
@@ -428,6 +437,7 @@ class WriteJournal:
                 continue
             if cur == e["original"]:
                 actions.append("Unchanged %s" % path)      # 本来就没改动（含写入已中止）
+                self._resolve_residual(e, actions)
                 continue
             if cur != e["written"]:
                 actions.append("Skipped(modified-by-others) %s" % path)
@@ -442,6 +452,7 @@ class WriteJournal:
                 else:
                     os.remove(path)
                     actions.append("Removed %s" % path)
+                self._resolve_residual(e, actions)
             except OSError as exc:
                 actions.append("Failed %s (%s)" % (path, exc))
                 self.residuals.append({
