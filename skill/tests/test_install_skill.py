@@ -389,6 +389,38 @@ class TestR5N1PathOccupiedByFile(R7Helper):
                                               "--project", self.proj, "--source", self.src, *e]))
 
 
+class TestR4N10ManifestKeysAndInnerLink(R7Helper):
+    def test_R4N10_manifest_invalid_keys_not_carried(self):
+        self.assertEqual(self.install()[0], 0)
+        mp = os.path.join(self.dest, MANIFEST)
+        with open(mp, encoding="utf-8") as fh:
+            data = json.load(fh)
+        data["files"]["../evil.txt"] = "0" * 64
+        data["files"]["C:/abs.txt"] = "0" * 64
+        with open(mp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        self.make_source({"SKILL.md": "skill v2\n", "references/a.md": "A1\n", "scripts/s.py": "print(1)\n"})
+        rc, out = self.install("--force")
+        self.assertEqual(rc, 0, out)
+        with open(mp, encoding="utf-8") as fh:
+            files = json.load(fh)["files"]
+        self.assertNotIn("../evil.txt", files)
+        self.assertNotIn("C:/abs.txt", files)
+
+    def test_R4N10_inner_junction_into_dest_refused(self):
+        self.assertEqual(self.install()[0], 0)
+        sp = os.path.join(self.dest, "scripts")
+        shutil.rmtree(sp)
+        if not make_junction(sp, os.path.join(self.dest, "references")):
+            self.skipTest("NOT_RUN: 无法创建 Junction")
+        self.make_source({"SKILL.md": "skill v1\n", "references/a.md": "A1\n", "scripts/s.py": "print(2)\n",
+                          "scripts/a.md": "X\n"})
+        before = snapshot(os.path.join(self.dest, "references"))
+        rc, out = self.install("--force")
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(snapshot(os.path.join(self.dest, "references")), before)
+
+
 class TestFailureHonesty(Base):
     def test_write_failure_reports_incomplete(self):
         def boom(*a, **k):

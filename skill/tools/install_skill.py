@@ -137,6 +137,13 @@ def load_manifest(dest: str):
         return None, "安装清单无法解析: %s (%s)" % (p, exc)
 
 
+def _valid_rel(rel: str) -> bool:
+    """R4-N10：清单键必须是 dest 内的规范相对路径（无空段/./..、非绝对、无反斜杠或盘符）。"""
+    if not isinstance(rel, str) or not rel or os.path.isabs(rel) or "\\" in rel or ":" in rel:
+        return False
+    return not any(p in ("", ".", "..") for p in rel.split("/"))
+
+
 def plan_install(source: str, dest: str, src_files: dict, owned: dict):
     """逐文件分类。返回 dict(create, update, same, conflicts)。"""
     create, update, same, conflicts, boundary = [], [], [], [], []
@@ -337,7 +344,7 @@ def main(argv):
             write_file(dest, rel, data)
             written.append(rel)
         if need_manifest or changes:
-            files = dict(owned)
+            files = {r: h for r, h in owned.items() if _valid_rel(r)}  # R4-N10：丢弃非法清单键
             files.update(src_files)
             payload = {"kind": MANIFEST_KIND, "version": 1,
                        "note": "由 install_skill.py 生成：登记本技能写入的文件；未登记的文件属于用户，安装器不会改动。",
