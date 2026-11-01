@@ -266,7 +266,8 @@ def main(argv):
             rel_dest = os.path.relpath(dest, proj_abs)
         except ValueError:
             rel_dest = ".."
-        if not rel_dest.startswith(".."):
+        # R7-N2：按路径分量判断是否越出项目（`..x` 是合法分量名，不是上级目录）
+        if not os.path.isabs(rel_dest) and rel_dest.split(os.sep)[0] != "..":
             cur = proj_abs
             for part in rel_dest.split(os.sep):
                 cur = os.path.join(cur, part)

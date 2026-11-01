@@ -421,6 +421,17 @@ class TestR4N10ManifestKeysAndInnerLink(R7Helper):
         self.assertEqual(snapshot(os.path.join(self.dest, "references")), before)
 
 
+class TestR7N2DotDotPrefixedComponent(R7Helper):
+    def test_R7N2_dotdotx_junction_refused(self):
+        if not make_junction(os.path.join(self.proj, "..x"), self.outside):
+            self.skipTest("NOT_RUN: 无法创建 Junction")
+        before = snapshot(self.outside)
+        rc, out = self.run_argv(["--target", "claude-code", "--scope", "project", "--project", self.proj,
+                                 "--path", "..x", "--source", self.src, "--force"])
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(snapshot(self.outside), before, "不得经 ..x Junction 写到项目外")
+
+
 class TestFailureHonesty(Base):
     def test_write_failure_reports_incomplete(self):
         def boom(*a, **k):
