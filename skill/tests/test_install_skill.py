@@ -322,6 +322,25 @@ class TestR4N1FileOccupiesDir(Base):
         self.assertEqual(snapshot(self.dest), before)
 
 
+
+class R7Helper(Base):
+    def run_argv(self, argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = inst.main(argv)
+        return rc, buf.getvalue()
+
+class TestR4N4AncestorLink(R7Helper):
+    def test_R4N4_ancestor_junction_refused(self):
+        if not make_junction(os.path.join(self.proj, "skills"), self.outside):
+            self.skipTest("NOT_RUN: 无法创建 Junction")
+        before = snapshot(self.outside)
+        for extra in ((), ("--force",)):
+            rc, out = self.install(*extra)
+            self.assertEqual(rc, 1, out)
+            self.assertEqual(snapshot(self.outside), before, "不得经上层 Junction 写到项目外")
+
+
 class TestFailureHonesty(Base):
     def test_write_failure_reports_incomplete(self):
         def boom(*a, **k):

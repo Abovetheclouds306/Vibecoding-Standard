@@ -241,6 +241,22 @@ def main(argv):
         print("REFUSED: 目标目录本身是符号链接/Junction/重解析点，拒绝跟随写入: %s" % dest)
         print("== 结论: REFUSED（未写入任何文件，退出码 1）==")
         return 1
+    # R4-N4：project scope 下，项目根（不含）到目标目录之间任一分量是链接/重解析点 → 拒绝跟随（rc1）。
+    # user scope 的 ~ 及其上层不在此检查范围（见 TODO R4-N4 说明）。
+    if args.scope == "project":
+        proj_abs = os.path.abspath(args.project)
+        try:
+            rel_dest = os.path.relpath(dest, proj_abs)
+        except ValueError:
+            rel_dest = ".."
+        if not rel_dest.startswith(".."):
+            cur = proj_abs
+            for part in rel_dest.split(os.sep):
+                cur = os.path.join(cur, part)
+                if is_link_like(cur):
+                    print("REFUSED: 安装路径分量是符号链接/Junction/重解析点，拒绝跟随写入: %s" % cur)
+                    print("== 结论: REFUSED（未写入任何文件，退出码 1）==")
+                    return 1
     if os.path.lexists(dest) and not os.path.isdir(dest):
         print("REFUSED: 目标路径已存在但不是目录: %s" % dest)
         print("== 结论: REFUSED（未写入任何文件，退出码 1）==")
