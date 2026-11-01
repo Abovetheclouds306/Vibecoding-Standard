@@ -230,6 +230,16 @@ def main(argv):
     print("目标    : %s" % dest)
     print("模式    : %s" % ("dry-run" if args.dry_run else "apply"))
 
+    # R4-N5：源与目标真实位置相同或互相包含 → 拒绝（rc1，零写入）
+    try:
+        rs, rdst = os.path.realpath(source), os.path.realpath(dest)
+        overlap = os.path.commonpath([rs, rdst]) in (rs, rdst)
+    except ValueError:
+        overlap = False
+    if overlap:
+        print("REFUSED: 源目录与目标目录重叠（相同或互相包含）: %s / %s" % (rs, rdst))
+        print("== 结论: REFUSED（未写入任何文件，退出码 1）==")
+        return 1
     try:
         src_files = source_files(source)
     except BoundaryError as exc:

@@ -341,6 +341,31 @@ class TestR4N4AncestorLink(R7Helper):
             self.assertEqual(snapshot(self.outside), before, "不得经上层 Junction 写到项目外")
 
 
+class TestR4N5SourceDestOverlap(R7Helper):
+    def test_R4N5_dest_equals_source(self):
+        same = os.path.join(self.proj, "skills", "vibecoding")
+        shutil.copytree(self.src, same)
+        before = snapshot(same)
+        rc, out = self.install("--force", source=same)
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(snapshot(same), before)
+
+    def test_R4N5_dest_inside_source(self):
+        before = snapshot(self.src)
+        rc, out = self.run_argv(["--target", "claude-code", "--scope", "project", "--project", self.src,
+                                 "--path", "nested", "--source", self.src])
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(snapshot(self.src), before)
+
+    def test_R4N5_source_inside_dest(self):
+        inner = os.path.join(self.dest, "sub", "vibecoding")
+        shutil.copytree(self.src, inner)
+        before = snapshot(self.proj)
+        rc, out = self.install("--force", source=inner)
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(snapshot(self.proj), before)
+
+
 class TestFailureHonesty(Base):
     def test_write_failure_reports_incomplete(self):
         def boom(*a, **k):
