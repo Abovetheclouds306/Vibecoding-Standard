@@ -55,3 +55,20 @@
 1. 安排 R4 独立复核（不是开发者本人）。
 2. Chris 决定 vendor 范围与是否推送两个分支。
 3. 视需要在有权限的机器上补跑文件符号链接用例。
+
+## 9. R5 轮（R4-N1/N2/N3 修复，开发者自测，非独立复核）
+- 提交：a887cd9（安装器 N1+N3 + test_install_skill.py），9c91a9e（vb_init N2 + test_vb_init_cli.py），以及本文档提交。范围：`git log 5327eb9..fix/skill-ins1-cli-v0.1.1`。
+- N1：plan_install 对每个文件检查所需父目录分量，`lexists 且非目录` → 冲突「所需目录位置被非目录占用」→ rc2，零写入（含 --force）。
+- N3：guard 的 BoundaryError 不再降级为冲突，单独列出并 REFUSED rc1（与文档一致）；两个链接用例断言由 `!=0` 收紧为 `==1`。
+- N2：`_compensate` 仅当当前内容 == 本进程写入值时才还原/删除，否则记 ResidualRisk；`_mkdirs` 把新建目录的 realpath 登记进 baseline，guard 对父路径校验 realpath 是否变化（识别指向项目内的 Junction 替换）；rollback 中越界/不可读/被他人改动的跳过项全部进残留，因此不会再输出「FAILED（已回滚」。不引入事务框架。
+- 命令与退出码（Windows，Python 3.14.3）：
+  | 命令 | 时点 | rc | 结果 |
+  |---|---|---|---|
+  | 全套 unittest discover | 改动前 5327eb9 | 0 | 78 OK（skip 1） |
+  | verify_manifest（cwd=vendor） | 改动前 | 0 | PASS 33/0/0/0 |
+  | 新/收紧用例 × 5327eb9（git show 到 %TEMP%\vbr5\old5327，VB_INSTALLER_UNDER_TEST / VB_INIT_UNDER_TEST） | 判别 | 1 | 8 运行：5 FAIL + 1 ERROR（V7：decoy/config.json 经 Junction 被删），1 skip（文件符号链接），1 PASS |
+  | 同上 × 新版 | 判别 | 0 | 8 运行，0 FAIL，1 skip |
+  | 全套 unittest discover | 改动后 | 0 | 83 OK（skip 1） |
+  | verify_manifest | 改动后 | 0 | PASS 33/0/0/0 |
+- R5 复核入口：重跑 R4 的 raw\atk_installer.py I1（文件占位 scripts）与 raw\atk_init.py V6/V7（mock `_replace`），对比 5327eb9 与 HEAD；尝试：更深层文件占位、补偿与回滚之间二次替换、文件符号链接（本机 NOT_RUN）、真实 TOCTOU 竞态（NOT_RUN）。
+- 残留风险：TOCTOU 窗口仍在（检查—写入非原子）；N4..N10 仍 OPEN；文件符号链接、跨盘、Linux/macOS、user scope 仍 NOT_RUN。
