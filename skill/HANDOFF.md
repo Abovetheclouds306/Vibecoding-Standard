@@ -98,3 +98,14 @@
 - 待 Owner 决定：R4-N7（固定标准哈希）、R4-N6 余项（--json --help 的 status、KeyboardInterrupt）。
 - R7 复核建议：用独立副本重跑上述变异；尝试 --project 为相对路径/含 `..` 时的分量检查、--path 为绝对路径（跳过链路检查，仅 dest 自身与 guard）、user scope、盘符根实写（本轮仅函数级）。
 - NOT_RUN：文件符号链接（WinError 1314）、真实 TOCTOU 竞态、user scope、Linux/macOS、盘符根实际写入。
+
+## 12. R8 轮（R7-N1..N6，开发者自测，非独立复核）
+- 范围：`git log bd92f8a..fix/skill-ins1-cli-v0.1.1`。开发临时目录：%TEMP%\vbdev_r8（旧版副本 oldbd92\，变异 mut\ 与 mutate_r8.py）。
+- 提交：368f20a R7-N1（vb_init.py + test_vb_init_cli.py）；fb53917 R7-N2、2289ccc R7-N6（install_skill.py + test_install_skill.py）；41bb45e R7-N4（test_vb_init_cli.py）；130753c R7-N3（install_skill.py docstring + HANDOFF §3）；以及本文档提交。
+- R7-N1：补偿阶段 guard 失败的条目标记 redirected；回滚时即使原路径已收敛也不撤销其残留，只把 actual 改写为「原路径已为写入前内容；写入实际落点未知（未检查）」。R5-N3 用例的期望相应更正为“残留保留 + 描述含实际落点未知 + 无『FAILED（已回滚』”（不是放宽：原期望正是 R7 判定的回归）。未做 realpath 落点追踪：guard 与提交之间仍可被替换，记录的 realpath 也不能证明真实落点。
+- 判别：新/改 5 例 × bd92f8a → 4 FAIL、1 PASS（R7-N4 为变异保护用例）；× HEAD 全部 PASS。
+- 变异（python %TEMP%\vbdev_r8\mutate_r8.py）：N1a 不打 redirected 标记、N1b 对被重定向条目照常撤销、N2 恢复 startswith("..")、N6 去掉悬空链接判定、E2 preflight 恢复旧拼接——全部 KILLED。
+- 全套 unittest discover：rc=0，109 OK，skipped=1；verify_manifest：rc=0。
+- OPEN/待决：R7-N5（Info，OPEN）；R4-N7、R4-N6 余项（待 Owner）。
+- R8 复核建议：重跑 R7 raw\atk_reconcile.py 对 HEAD；尝试“提交前未重定向、提交后才换 Junction 再换回”（现在同样保留残留，属保守的误报）。
+- NOT_RUN：文件符号链接、真实 TOCTOU 竞态、user scope、Linux/macOS、盘符根实际写入。
