@@ -367,5 +367,24 @@ class TestR4N9DriveRoot(R7Helper):
         vb_init.WriteJournal(root=root).guard(os.path.join(root, "AGENTS.md"))  # 只校验、不写盘
 
 
+class TestR4N6ArgvParsing(R7Helper):
+    def test_R4N6_abbreviation_rejected(self):
+        rc, out = run_main(["--project", self.proj, "--jso", "--standard", VENDOR])
+        self.assertEqual(rc, 2, out)
+        self.assertFalse(os.path.exists(os.path.join(self.proj, ".vibecoding")))
+
+    def test_R4N6_json_abbrev_apply_is_usage_error(self):
+        rc, out = run_main(["--project", os.path.join(self.tmp, "nope"), "--json", "--app"])
+        j = json.loads(out)
+        self.assertEqual((j["status"], j["rc"], rc), ("usage_error", 2, 2))
+
+    def test_R4N6_json_project_equals_form(self):
+        nope = os.path.join(self.tmp, "nope")
+        rc, out = run_main(["--project=" + nope, "--json", "--apply"])
+        j = json.loads(out)
+        self.assertEqual(j["project"], os.path.abspath(nope))
+        self.assertEqual(j["mode"], "apply")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

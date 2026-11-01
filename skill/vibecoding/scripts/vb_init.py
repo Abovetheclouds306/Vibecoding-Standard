@@ -671,7 +671,8 @@ def print_residuals(residuals: list[dict]) -> bool:
 
 
 def _main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="Vibecoding Skill 受保护初始化（默认 dry-run）")
+    ap = argparse.ArgumentParser(description="Vibecoding Skill 受保护初始化（默认 dry-run）",
+                                 allow_abbrev=False)   # R4-N6：禁止前缀缩写（--jso/--app 等）
     ap.add_argument("--project", default=".", help="目标项目目录（默认当前目录）")
     ap.add_argument("--standard", help="标准副本目录（含 tools/verify_manifest.py）")
     ap.add_argument("--apply", action="store_true", help="实际落盘；缺省为 dry-run")
@@ -956,11 +957,18 @@ def main(argv: list[str]) -> int:
     else:
         first = lines[0] if lines else ""
         status = "usage_error" if usage_error else ("refused" if first.startswith("REFUSED") else "failed")
-        proj = None
-        if "--project" in argv and argv.index("--project") + 1 < len(argv):
-            proj = os.path.abspath(argv[argv.index("--project") + 1])
+        # R4-N6：mode/project 用与 _main 相同的解析规则推导（支持 --project=X，不认缩写）
+        mp = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+        mp.add_argument("--project")
+        mp.add_argument("--apply", action="store_true")
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                known, _ = mp.parse_known_args(argv)
+        except SystemExit:
+            known = None
+        proj = os.path.abspath(known.project) if known is not None and known.project else None
         payload = {"status": status, "rc": rc, "error": first, "messages": lines,
-                   "mode": "apply" if "--apply" in argv else "dry-run", "project": proj,
+                   "mode": "apply" if known is not None and known.apply else "dry-run", "project": proj,
                    "steps": [], "needs_decision": False, "block_updated": False}
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return rc
