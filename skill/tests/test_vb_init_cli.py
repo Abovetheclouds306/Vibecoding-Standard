@@ -533,5 +533,12 @@ class TestR7N1RedirectedCommitNotReconciled(R7Helper):
         self.assertNotIn("FAILED（已回滚", out)
 
 
+class TestR7N4PreflightDriveRoot(R7Helper):
+    def test_R7N4_preflight_drive_root_no_false_boundary(self):
+        root = os.path.abspath(os.sep)
+        problems = vb_init.preflight(root, {"status": "created"})   # 只读检查，不写盘
+        self.assertEqual([p for p in problems if "越出项目目录" in p], [], problems)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
