@@ -132,22 +132,20 @@ Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.8-候选-完�
 
 适用情形：在加入 `.gitattributes` 之前、以 `core.autocrlf=true` 克隆的旧工作区，切换到 1.2.8 候选后 `python tools/verify_manifest.py` 失败，而 `git status` 显示干净。`.gitattributes` 只保护新克隆与之后新检出的文件，不会自动改写旧工作区中已存在的 CRLF 文件。
 
-**推荐做法（不改动旧工作区）：**
+**唯一推荐做法（不改动旧工作区）：**
 
 1. 在**新目录**重新克隆：`git clone <规范仓库地址> <新目录>`，切换到目标版本。
 2. 在新目录运行 `python tools/verify_manifest.py`，确认 `PASS` 后再使用。
-3. 把旧工作区里你自己的未提交修改、未跟踪文件逐项核对后手动迁入新目录；确认无遗漏前保留旧目录，不要删除。多人共用的工作区先与其他使用者确认。
+3. 在旧工作区用 `git -c core.quotepath=false status` 查看你自己的修改与未跟踪文件（中文路径会按原样显示，而不是 `\346\226…` 这类转义）；逐项核对后手动复制到新目录。确认无遗漏前保留旧目录，不要删除、清理或覆盖它；多人共用的工作区先与其他使用者确认。
 
-**原地恢复（仅限以下已实测的范围）：** 只对「清单校验失败」且「不在 `git status --porcelain -uall` 输出中」的文件，逐个删除后用 `git checkout -- <文件>` 重新检出。PowerShell 示例（逐个文件执行，`<文件>` 为相对路径）：
+本规范**不提供**在旧工作区里删除并重新检出文件的「原地恢复」步骤：
 
-```powershell
-Remove-Item -LiteralPath <文件>
-git checkout -- <文件>
-```
+- `git status` 显示干净（或某文件未出现在输出中）**不能证明该文件可以安全删除**。Git 默认 `core.quotepath=true` 时，非 ASCII 路径在输出中被转义，按字面比对会把已修改的中文路径文件误判为未修改，删除后修改无法找回（已实测复现）。
+- 只执行 `git checkout -- <文件>` 不会改变已检出文件的换行；`git add --renormalize .` 也不会修复工作区文件（已实测）。
+- 不要使用 `git reset --hard`、`git clean`、强制检出（`git checkout -f` 等）、批量删除或整体覆盖目录；这些操作会丢弃本地修改或他人的文件。
+- 不要修改 `.gitattributes` 规则来绕过校验。
 
-实测结论（Windows，`core.autocrlf=true` 旧克隆，从 1.2.7 切换到 1.2.8 候选）：上述逐文件处理后这些文件恢复为 LF；有本地修改的文件与未跟踪文件均保持原样，清单校验对它们仍报失败或未登记（不会出现假 `PASS`），需人工处理。同一测试中**无效**的做法：只执行 `git checkout -- <文件>`（不先删除）不会改变换行；`git add --renormalize .` 不会修复工作区文件。
-
-**未经测试，不推荐：** `git rm --cached -r .` 配合 `git reset --hard`、`git clean`、或整体覆盖目录等做法会丢弃本地修改或未跟踪文件，本规范未验证也不推荐；不要在未备份、未核对 `git status` 的情况下执行。不要修改 `.gitattributes` 规则来绕过校验。
+如无法确认哪些文件属于你、修改是否已全部备份，就停在第 3 步之前，只使用新目录。
 
 ### 证据时间行格式（check_evidence.py 实测）
 
