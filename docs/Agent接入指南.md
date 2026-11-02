@@ -130,7 +130,7 @@ my-project/
 - 或采用经验证有效的 `Project instructions` 双读取配置。加载行为受工具版本、实际配置和环境影响，**以 [`../agents/Claude-Code.md`](../agents/Claude-Code.md) 的机制和当前本机验证为准**。
 - 可通过 Claude Code 的 `/context` 等当前支持的方式检查加载；需要进一步确定时采用内容敏感探针，不把 Agent 口头声称“我读了”单独视为强证据。
 
-### Codem / 其他 Agent / 自定义 Harness
+### CodeM / 其他 Agent / 自定义 Harness
 
 **不能假设它们自动读取 `AGENTS.md`、`CLAUDE.md` 或 GitHub 私有仓库。**
 
