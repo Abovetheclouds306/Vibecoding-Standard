@@ -68,12 +68,12 @@ Claude Code 通过「**Project instructions**」设置决定读取哪些指令�
 | 直接读取 `AGENTS.md` 的最低版本为 **v2.1.277** | **OFFICIAL_DOCUMENTED** |
 | v2.1.280 之前 `/memory` 与 `/context` 不列出直接读取的 `AGENTS.md` | **OFFICIAL_DOCUMENTED** |
 | 非标准会话（官方举例：Amazon Bedrock、禁用遥测）在 v2.1.281 之前只读 `CLAUDE.md` | **OFFICIAL_DOCUMENTED** |
-| 本机实测：2.1.100 / 2.1.276 / 2.1.277 / 2.1.280 不读取，2.1.281 起读取 | **LOCALLY_VERIFIED**（仅 Windows + 本机自建网关 + 默认配置，各端复验 2 次） |
+| 历史实测：2.1.100 / 2.1.276 / 2.1.277 / 2.1.280 不读取，2.1.281 起读取 | **LOCALLY_VERIFIED**（仅单一 Windows 测试环境，经非默认 API 接入方式访问，默认配置，各端复验 2 次；结论可能受该环境影响） |
 | 其他平台、其他 `Project instructions` 取值下的具体行为 | **UNVERIFIED** |
 
 > 依据来源：Anthropic 官方文档 *How Claude remembers your project*（`docs.anthropic.com/en/docs/claude-code/memory`），2026-10-16 查阅。
 >
-> ⚠ **不要把本机实测的 2.1.281 当作通用版本边界**。官方口径是 **v2.1.277**；本机差异最可能来自"非标准会话"这一类（本机通过自建网关访问）。**VERSION_DEPENDENT 的内容请以官方文档为准，并用 §3 的方法在本机现测。**
+> ⚠ **不要把历史实测的 2.1.281 当作通用版本边界**。官方口径是 **v2.1.277**；该实测环境使用非默认 API 接入方式，差异可能与官方所述的"非标准会话"情形有关，但未经验证，不能据此推断其他环境的版本边界。**VERSION_DEPENDENT 的内容请以官方文档为准，并用 §3 的方法在本机现测。**
 
 ## 3. 如何验证真的加载了
 

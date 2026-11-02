@@ -120,8 +120,16 @@ Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.8-候选-完�
 - `MANIFEST.sha256` 列出发布包内全部文件的 SHA-256（不含清单自身，也不含 `_archive/`、`_review_*/`、`_dist/`）。
 - 校验：`python tools/verify_manifest.py` 和 `python tools/check_links.py`；证据模板可用只读 `python tools/check_evidence.py <evidence.md> --task-id <TASK-xxx> --task-status <REVIEW|DONE|IN_PROGRESS|BLOCKED>` 检查。检查 `DONE` 时还需用任务权威来源提供必要 `--acceptance-id`，否则输出 `UNKNOWN`。省略 `--task-status` 时门禁不判 `PASS`，输出 `UNKNOWN` 并声明未执行 DONE 完整性检查；验收行或总结论为 `FAIL` 时判 `FAIL`。退出码 0=PASS、1=FAIL、2=UNKNOWN，严重度为 `FAIL` > `UNKNOWN` > `PASS`。相对证据路径以证据文件目录为基准，外部索引无法本地验证时输出 `UNKNOWN`。未完成记录不呈现为通过：验收行 `NOT_RUN`/`BLOCKED` 且原因有效时，非 `DONE` 输出 `UNKNOWN`、`DONE` 判 `FAIL`；总结论 `NOT_RUN`/`BLOCKED`/`N/A` 同理；必要验收的 `N/A` 判 `FAIL`。门禁只解析首个连续验收表，不支持跨表聚合验证，不应据此宣称已覆盖全部验收记录。识别边界固定为三档：正式验收表（六类列齐全）全量检查；缺表头分隔行、位于主表之前或列数不足的疑似验收表一律输出 `UNKNOWN` 并给出行号（不得静默忽略，静默忽略即等于假 `PASS`）；普通设计清单与代码示例不参与判定。结果列须为结果语义（`结论 / 结果 / Result / Outcome / 实际`），`预期 / 期望 / Expected / 前置` 属前瞻语义，`用例 ID｜预期结果` 不算执行结论；ID 列支持「验收 ID / 验收编号 / 用例 ID / Acceptance / Case ID」等别名，相邻第二表按表头切分且表头不得被当成数据行；围栏代码块（`` ``` `` / `~~~`）内的表格不参与扫描。额外表内出现 `FAIL` 输出 `UNKNOWN`（不做跨表聚合），但主表中可靠解析出的 `FAIL` 必须判 `FAIL`。报告门禁结论时必须区分「证据结构检查通过」「任务验收通过」与「DONE 完整性判断通过」，不得混为同一结论。重新打包：`python tools/release_zip.py build <输出 zip>`（构建前会强制验证清单与文件哈希）。
 - Windows 亦可用 `Get-FileHash -Algorithm SHA256` 校验关键文件。
+- 仓库自带 `.gitattributes` 固定 LF 换行，Windows 默认设置克隆后即可直接校验；如手动复制文件导致换行被改成 CRLF，清单校验会失败，请重新克隆或解压正式 ZIP。
+- 清单自校验只能发现误改与传输损坏，**不能防止恶意替换**；信任边界见 [SECURITY.md](SECURITY.md)。
 - 版本号保持在文档与 ZIP 文件名中；**不把目录重命名为 `Vibecoding规范1.2.8`**。
 - 新项目可一次性采用；老项目应先试点一个任务，避免批量重构。
 - `_archive/` 是历史备份，**不要交给 Agent 当成现行规则**。最新规范始终从 `README.md` / `AI_PROJECT_STANDARD.md` 进入。
 
 > 本次发布包与仓库内工作文件保持同一版本；`_archive/`、`_review_*/`、`_dist/` 一律不打进发布包；当前版本 ZIP 不打包自身（避免无限嵌套）。
+
+## 六、版权、许可与商标
+
+- **许可状态：尚未授予任何开源许可。** [LICENSE-DRAFT.md](LICENSE-DRAFT.md) 仅为 MIT 许可草案（DRAFT / NOT GRANTED），不构成授权；在版权持有人完成 [COPYRIGHT-CHECKLIST.md](COPYRIGHT-CHECKLIST.md) 并正式发布 `LICENSE` 之前，保留所有权利。
+- **商标与产品名**：文中出现的 Claude、Claude Code、Anthropic、Codex、OpenAI、Cursor 等名称归各自权利人所有，仅为说明兼容性而作指称性使用，不表示任何关联、认可或背书。对第三方产品行为的描述以其官方文档为准，并按证据分级标注。
+- **安全**：漏洞报告与清单校验的信任边界见 [SECURITY.md](SECURITY.md)。

@@ -1,0 +1,4 @@
+# 统一换行：仓库内文本文件一律以 LF 存储并以 LF 检出（不受 core.autocrlf 影响），
+# 保证 MANIFEST.sha256 在 Windows / Linux / macOS 克隆后都能校验通过。
+* text=auto eol=lf
+*.zip binary
