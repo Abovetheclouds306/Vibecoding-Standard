@@ -1,6 +1,6 @@
-# Vibecoding 规范 v1.2.8 候选
+# Vibecoding 规范 v1.2.8
 
-版本：1.2.8 候选｜更新：2026-11-02｜适用：Codex / Claude Code / 其他遵守仓库入口规则的 Agent
+版本：1.2.8｜更新：2026-11-11｜适用：Codex / Claude Code / 其他遵守仓库入口规则的 Agent
 
 > 一套规范、一个任务真值源、多个 Agent 共用。不安装程序，不直接修改任何业务仓库。
 
@@ -75,12 +75,12 @@
 
 本包是 **Markdown 工程规则与模板**，不是可执行插件；解压后不会自动配置 MCP、Skills 或修改任何代码仓库。
 
-1. 下载 `Vibecoding规范-v1.2.8-候选-完整整合版.zip`。
+1. 下载 `Vibecoding规范-v1.2.8-完整整合版.zip`。
 2. 先备份本地已有同名目录（如有），**不要直接覆盖未提交的个人修改**。
 3. 解压到目标位置。ZIP 内含单一顶层目录 `Vibecoding规范/`：
 
 ```powershell
-Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.8-候选-完整整合版.zip" -DestinationPath 'D:\work'
+Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.8-完整整合版.zip" -DestinationPath 'D:\work'
 ```
 
 > **不要**解压到已经命名为 `Vibecoding规范` 的文件夹中，否则会形成双层同名目录。
@@ -130,7 +130,7 @@ Expand-Archive -LiteralPath "$HOME\Downloads\Vibecoding规范-v1.2.8-候选-完�
 
 ### 旧克隆的 CRLF 恢复
 
-适用情形：在加入 `.gitattributes` 之前、以 `core.autocrlf=true` 克隆的旧工作区，切换到 1.2.8 候选后 `python tools/verify_manifest.py` 失败，而 `git status` 显示干净。`.gitattributes` 只保护新克隆与之后新检出的文件，不会自动改写旧工作区中已存在的 CRLF 文件。
+适用情形：在加入 `.gitattributes` 之前、以 `core.autocrlf=true` 克隆的旧工作区，切换到 1.2.8 后 `python tools/verify_manifest.py` 失败，而 `git status` 显示干净。`.gitattributes` 只保护新克隆与之后新检出的文件，不会自动改写旧工作区中已存在的 CRLF 文件。
 
 **唯一推荐做法（不改动旧工作区）：**
 

@@ -1,6 +1,6 @@
 # 将 Vibecoding 规范接入自己的 AI Agent
 
-> 适用版本：**Vibecoding Standard v1.2.8 候选**（本指南随同规范版本更新）。本文是**接入操作指南**，不是新的母规范。治理要求以 [`../AI_PROJECT_STANDARD.md`](../AI_PROJECT_STANDARD.md) 为准；Codex / Claude Code 特殊机制分别以 [`../agents/Codex.md`](../agents/Codex.md)、[`../agents/Claude-Code.md`](../agents/Claude-Code.md) 为准。
+> 适用版本：**Vibecoding Standard v1.2.8**（本指南随同规范版本更新）。本文是**接入操作指南**，不是新的母规范。治理要求以 [`../AI_PROJECT_STANDARD.md`](../AI_PROJECT_STANDARD.md) 为准；Codex / Claude Code 特殊机制分别以 [`../agents/Codex.md`](../agents/Codex.md)、[`../agents/Claude-Code.md`](../agents/Claude-Code.md) 为准。
 
 ## 一、最推荐：直接把规范交给 Agent，让它帮你接入
 
@@ -15,7 +15,7 @@
 ### 直接发给 Agent 的接入提示词
 
 ```text
-请在当前业务项目中接入我的统一工程规范 Vibecoding Standard v1.2.8 候选。
+请在当前业务项目中接入我的统一工程规范 Vibecoding Standard v1.2.8。
 
 规范仓库：<规范仓库地址>
 如果你无法访问规范仓库，请先检查我提供的本地规范目录或正式 ZIP；仍不可访问时如实报告 BLOCKED，不得猜测或伪称已读取。
@@ -97,7 +97,7 @@ my-project/
 
 ```markdown
 ## 统一工程规范
-- 标准：Vibecoding Standard v1.2.8 候选。
+- 标准：Vibecoding Standard v1.2.8。
 - 母规范：`D:\work\Vibecoding-Standard\AI_PROJECT_STANDARD.md`。
 - 采纳的标准 commit：`<以 git rev-parse HEAD 实测的 40 位 SHA>`。
 - 每次接受新任务，在修改代码前先实际读取母规范并确认适用条款；如无法读取，明确报告，禁止假称已遵守。

@@ -1,4 +1,4 @@
-# Codex 接入 — Vibecoding v1.2.8 候选
+# Codex 接入 — Vibecoding v1.2.8
 
 适用：Codex。Claude Code 见 [`Claude-Code.md`](Claude-Code.md)。
 

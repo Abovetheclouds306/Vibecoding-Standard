@@ -1,6 +1,6 @@
 # AI Project Standard — Vibecoding 规范 1.2
 
-版本：1.2.8 候选｜日期：2026-11-02｜兼容 Codex、Claude Code 与其他遵守仓库入口规则的 Agent
+版本：1.2.8｜日期：2026-11-11｜兼容 Codex、Claude Code 与其他遵守仓库入口规则的 Agent
 
 ## 1. 目的与适用范围
 
