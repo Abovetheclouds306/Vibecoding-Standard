@@ -1,27 +1,4 @@
-# LICENSE 草案（DRAFT — 尚未授予任何许可）
+# LICENSE 草案（已废止）
 
-> **状态：DRAFT / NOT GRANTED。** 本文件只是供版权持有人审阅的 MIT 许可证草案，**不构成任何授权**。在维护者完成 `COPYRIGHT-CHECKLIST.md` 并正式发布名为 `LICENSE` 的文件之前，本仓库内容保留所有权利（All rights reserved）。
-
----
-
-MIT License
-
-Copyright (c) <年份> <版权持有人>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+> **状态：SUPERSEDED。** 正式许可见仓库根目录 [`LICENSE`](LICENSE)（MIT License，Copyright (c) 2026 YunAbove，2026-11-11 起生效）。
+本文件仅保留作历史草案存档，**不再**作为授权依据。

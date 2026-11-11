@@ -1,5 +1,10 @@
 # Vibecoding 规范变更记录
 
+## 1.2.9 — 2026-11-11（开源许可授予；无规范行为变更）
+
+- **许可**：Owner 确认后发布正式 [`LICENSE`](LICENSE)（MIT，Copyright (c) 2026 YunAbove）；完成 `COPYRIGHT-CHECKLIST.md`；`LICENSE-DRAFT.md` 标为已废止。允许随依赖方（含 Vibecoding Skill）再分发本仓库发布副本。
+- **版本标识**：`VERSION` 与文档同步为 1.2.9；母规范 §1–21 与工具判定逻辑未改。
+
 ## 1.2.8 — 2026-11-11（私有正式发布；规范行为与 1.2.8 候选相同）
 
 - **发布身份（本条）**：`VERSION` 与文档标识由 `1.2.8-candidate` / 「1.2.8 候选」收为 **`1.2.8`**；私有仓打 tag `v1.2.8` 并发布 ZIP。工程候选 tip `2e010b0` 之上仅版本标识与清单哈希变更。
